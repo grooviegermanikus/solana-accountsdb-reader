@@ -79,7 +79,8 @@ async fn main() -> anyhow::Result<()> {
             for handle in append_vec_iter(&append_vec) {
                 cnt_append_vecs += 1;
                 if cnt_append_vecs % 100_000 == 0 {
-                    info!("{} append vecs in {:.3}s", cnt_append_vecs, started_at.elapsed().as_secs_f64());
+                    info!("{} append vecs in {:.3}s (speed {:.0}/s)",
+                        cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                 }
                 let stored = handle.access().unwrap();
                 trace!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
@@ -121,6 +122,8 @@ impl Minimum for MagicKey {
 struct ExpandedKey {
     pub owner_pubkey: Pubkey,
     pub account_pubkey: Pubkey,
+    // double hash
+    pub account_double_hash32: u32,
 }
 
 impl MagicKey {
@@ -137,6 +140,13 @@ impl MagicKey {
 
 fn fnv32_pubkey(pubkey: &Pubkey) -> u32 {
     fnv64_pubkey(pubkey) as u32
+}
+
+fn fnv32_doublehash_pubkey(pubkey: &Pubkey) -> u32 {
+    let mut hasher = FnvHasher::default();
+    hasher.write(pubkey.as_ref());
+    let owner_hash64 = hasher.finish();
+    owner_hash64 as u32
 }
 
 fn fnv64_pubkey(pubkey: &Pubkey) -> u64 {
@@ -216,9 +226,11 @@ impl ProgramPrefixBtree {
         self.writes += 1;
 
         let magic_key = MagicKey::from_pubkeys(owner_pubkey, account_pubkey);
+        let account_double_hash32 = fnv32_doublehash_pubkey(&account_pubkey);
         let expanded_key = ExpandedKey {
             owner_pubkey,
             account_pubkey,
+            account_double_hash32,
         };
         let replacement = self.store.insert(magic_key, (expanded_key, value));
 
@@ -227,12 +239,19 @@ impl ProgramPrefixBtree {
 
             // assert_eq!(prev_value.0.owner_pubkey, owner_pubkey, "owner pubkey fnv hash collision");
             // assert_eq!(prev_value.0.account_pubkey, account_pubkey, "account pubkey infix collision");
+
+
             if prev_value.0.owner_pubkey != owner_pubkey {
                 warn!("owner pubkey fnv hash collision ({} <-> {})", prev_value.0.owner_pubkey, owner_pubkey);
             }
             if prev_value.0.account_pubkey != account_pubkey {
                 warn!("account pubkey hash collision ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
             }
+
+
+            let coll1 = prev_value.0.account_pubkey == account_pubkey;
+            let coll2 = prev_value.0.account_double_hash32 == account_double_hash32;
+            assert_eq!(coll1, coll2, "account collision checks disagree ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
 
         }
     }
@@ -260,9 +279,11 @@ impl SpaceJamMap {
 
     fn store(&self, account_pubkey: Pubkey, owner_pubkey: Pubkey, value: AccountStuff) {
         let magic_key = MagicKey::from_pubkeys(owner_pubkey, account_pubkey);
+        let account_double_hash32 = fnv32_doublehash_pubkey(&account_pubkey);
         let expanded_key = ExpandedKey {
             owner_pubkey,
             account_pubkey,
+            account_double_hash32
         };
         self.store.insert(magic_key, (expanded_key, value));
     }
