@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use cap::Cap;
-use log::warn;
+use log::{trace, warn};
 use {
     log::info,
     reqwest::blocking::Response,
@@ -10,13 +10,11 @@ use {
         append_vec::AppendVec,
         append_vec_iter,
         archived::ArchiveSnapshotExtractor,
-        parallel::{par_iter_append_vecs, AppendVecConsumer},
         unpacked::UnpackedSnapshotExtractor,
         AppendVecIterator, ReadProgressTracking, SnapshotError, SnapshotExtractor, SnapshotResult,
     },
     std::{
         fs::File,
-        io::{IoSliceMut, Read},
         path::Path,
         sync::Arc,
     },
@@ -24,6 +22,7 @@ use {
 use clap::Parser;
 use solana_accounts_db::account_info::{AccountInfo, StorageLocation};
 use solana_sdk::pubkey::Pubkey;
+use solana_accountsdb_reader::parallel::AppendVecConsumer;
 
 #[global_allocator]
 pub static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
@@ -77,10 +76,10 @@ async fn main() -> anyhow::Result<()> {
             info!("slot: {:?}", append_vec.slot());
             for handle in append_vec_iter(&append_vec) {
                 let stored = handle.access().unwrap();
-                info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
+                trace!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
                 let stuff = AccountStuff {
                 };
-                store.insert(stored.meta.pubkey, stuff);
+                store.store(stored.meta.pubkey, stuff);
             }
         }
     }
@@ -89,26 +88,40 @@ async fn main() -> anyhow::Result<()> {
 
     info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store.size() as f64);
 
+    store.debug();
+
     Ok(())
 }
 
 struct HashMapMapStore {
     store: HashMap<Pubkey, AccountStuff>,
+    writes: usize,
+    overwrites: usize,
 }
 
 impl HashMapMapStore {
     fn new() -> Self {
         Self {
             store: HashMap::new(),
+            writes: 0,
+            overwrites: 0,
         }
     }
 
-    fn insert(&mut self, key: Pubkey, value: AccountStuff) {
-        self.store.insert(key, value);
+    fn store(&mut self, key: Pubkey, value: AccountStuff) {
+        self.writes += 1;
+        let update = self.store.insert(key, value);
+        if update.is_some() {
+            self.overwrites += 1;
+        }
     }
 
     fn size(&self) -> usize {
         self.store.len()
+    }
+
+    fn debug(&self) {
+        info!("HashMap, entries: {}, writes: {}, overwrites: {}", self.size(), self.writes, self.overwrites);
     }
 }
 
