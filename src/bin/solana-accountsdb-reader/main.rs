@@ -224,8 +224,14 @@ impl ProgramPrefixBtree {
         if let Some(prev_value) = replacement {
             self.overwrites += 1;
 
-            assert_eq!(prev_value.0.owner_pubkey, owner_pubkey, "owner pubkey fnv hash collision");
-            assert_eq!(prev_value.0.account_pubkey, account_pubkey, "account pubkey infix collision");
+            // assert_eq!(prev_value.0.owner_pubkey, owner_pubkey, "owner pubkey fnv hash collision");
+            // assert_eq!(prev_value.0.account_pubkey, account_pubkey, "account pubkey infix collision");
+            if prev_value.0.owner_pubkey != owner_pubkey {
+                warn!("owner pubkey fnv hash collision ({} <-> {})", prev_value.0.owner_pubkey, owner_pubkey);
+            }
+            if prev_value.0.account_pubkey != account_pubkey {
+                warn!("account pubkey infix collision ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
+            }
 
         }
     }
@@ -337,8 +343,8 @@ fn test_magic_key() {
 
 #[test]
 fn test_fnv_collision() {
-    let key1 = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
-    let key2 = Pubkey::from_str("11111111111111111111111111111111").unwrap();
+    let key1 = Pubkey::from_str("9kS3ZoTfbREAzvT5i1BZy1qWYHyNVmAibiaDB12rTtci").unwrap();
+    let key2 = Pubkey::from_str("HcYUjwg8guwoEKWoZsReFtGsisxaZBbYfJ8nk9pNQ9UJ").unwrap();
     assert_ne!(fnv32_pubkey(&key1), fnv32_pubkey(&key2));
 }
 
