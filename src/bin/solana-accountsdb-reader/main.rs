@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
+use cap::Cap;
 use log::warn;
 use {
     log::info,
@@ -20,6 +22,10 @@ use {
     },
 };
 use clap::Parser;
+use solana_sdk::pubkey::Pubkey;
+
+#[global_allocator]
+pub static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
 
 
 #[derive(Parser, Debug)]
@@ -39,6 +45,8 @@ async fn main() -> anyhow::Result<()> {
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
+    info!("Reading snapshot from {:?} with {} bytes", archive_path, archive_path.metadata().unwrap().len());
+
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
     // for vec in loader.iter() {
@@ -50,13 +58,25 @@ async fn main() -> anyhow::Result<()> {
     //     }
     // }
 
-    par_iter_append_vecs(
-        loader.iter(),
-        || SimpleLogConsumer {
-        },
-        4,
-    )
-        .await?;
+
+    let before = ALLOCATOR.allocated();
+
+    let mut store: HashMap<Pubkey, ()> = HashMap::new();
+    for snapshot_result in loader.iter() {
+        for append_vec in snapshot_result {
+            info!("size: {:?}", append_vec.len());
+            info!("slot: {:?}", append_vec.slot());
+            for handle in append_vec_iter(&append_vec) {
+                let stored = handle.access().unwrap();
+                info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
+                store.insert(stored.meta.pubkey, ());
+            }
+        }
+    }
+
+    let after = ALLOCATOR.allocated();
+
+    info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store.len() as f64);
 
     Ok(())
 }
@@ -122,3 +142,7 @@ impl AppendVecConsumer for SimpleLogConsumer {
         Ok(())
     }
 }
+
+
+
+
