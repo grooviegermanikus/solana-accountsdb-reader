@@ -36,6 +36,8 @@ clap = { version = "4.5.4", features = ["derive"] }
 # groovie
 cap = "0.1.2"
 concurrent-map = "5.0.33"
+modular-bitfield = "0.11.2"
+fnv = "1.0.7"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"
