@@ -109,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 struct MagicKey {
     owner_pubkey_part: u32,
-    account_pubkey_part: u32,
+    account_pubkey_part: u64,
 }
 
 impl Minimum for MagicKey {
@@ -129,7 +129,7 @@ struct ExpandedKey {
 impl MagicKey {
     fn from_pubkeys(owner_pubkey: Pubkey, account_pubkey: Pubkey) -> Self {
         let owner_pubkey_part = fnv32_pubkey(&owner_pubkey);
-        let account_pubkey_part = fnv32_pubkey(&account_pubkey);
+        let account_pubkey_part = fnv64_pubkey(&account_pubkey);
         Self {
             owner_pubkey_part,
             account_pubkey_part,
@@ -139,10 +139,14 @@ impl MagicKey {
 }
 
 fn fnv32_pubkey(pubkey: &Pubkey) -> u32 {
+    fnv64_pubkey(pubkey) as u32
+}
+
+fn fnv64_pubkey(pubkey: &Pubkey) -> u64 {
     let mut hasher = FnvHasher::default();
     hasher.write(pubkey.as_ref());
     let owner_hash64 = hasher.finish();
-    owner_hash64 as u32
+    owner_hash64
 }
 
 fn prefix_from_pubkey(pubkey: &Pubkey) -> u32 {
@@ -230,7 +234,7 @@ impl ProgramPrefixBtree {
                 warn!("owner pubkey fnv hash collision ({} <-> {})", prev_value.0.owner_pubkey, owner_pubkey);
             }
             if prev_value.0.account_pubkey != account_pubkey {
-                warn!("account pubkey infix collision ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
+                warn!("account pubkey hash collision ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
             }
 
         }
