@@ -120,8 +120,8 @@ impl Minimum for MagicKey {
 // note: Clone is only required for the ConcurrentMap -- TODO check why
 #[derive(Clone)]
 struct ExpandedKey {
-    pub owner_pubkey: Pubkey,
-    pub account_pubkey: Pubkey,
+    // pub owner_pubkey: Pubkey,
+    // pub account_pubkey: Pubkey,
     // double hash
     pub account_double_hash32: u32,
 }
@@ -211,6 +211,7 @@ struct ProgramPrefixBtree {
     store: BTreeMap<MagicKey, (ExpandedKey, AccountStuff)>,
     writes: usize,
     overwrites: usize,
+    collisions: usize,
 }
 
 impl ProgramPrefixBtree {
@@ -219,6 +220,7 @@ impl ProgramPrefixBtree {
             store: BTreeMap::new(),
             writes: 0,
             overwrites: 0,
+            collisions: 0,
         }
     }
 
@@ -228,8 +230,8 @@ impl ProgramPrefixBtree {
         let magic_key = MagicKey::from_pubkeys(owner_pubkey, account_pubkey);
         let account_double_hash32 = fnv32_doublehash_pubkey(&account_pubkey);
         let expanded_key = ExpandedKey {
-            owner_pubkey,
-            account_pubkey,
+            // owner_pubkey,
+            // account_pubkey,
             account_double_hash32,
         };
         let replacement = self.store.insert(magic_key, (expanded_key, value));
@@ -241,17 +243,22 @@ impl ProgramPrefixBtree {
             // assert_eq!(prev_value.0.account_pubkey, account_pubkey, "account pubkey infix collision");
 
 
-            if prev_value.0.owner_pubkey != owner_pubkey {
-                warn!("owner pubkey fnv hash collision ({} <-> {})", prev_value.0.owner_pubkey, owner_pubkey);
-            }
-            if prev_value.0.account_pubkey != account_pubkey {
-                warn!("account pubkey hash collision ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
-            }
+            // if prev_value.0.owner_pubkey != owner_pubkey {
+            //     warn!("owner pubkey fnv hash collision ({} <-> {})", prev_value.0.owner_pubkey, owner_pubkey);
+            // }
+            // if prev_value.0.account_pubkey != account_pubkey {
+            //     warn!("account pubkey hash collision ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
+            // }
 
 
-            let coll1 = prev_value.0.account_pubkey == account_pubkey;
+            // let coll1 = prev_value.0.account_pubkey == account_pubkey;
             let coll2 = prev_value.0.account_double_hash32 == account_double_hash32;
-            assert_eq!(coll1, coll2, "account collision checks disagree ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
+            // assert_eq!(coll1, coll2, "account collision checks disagree ({} <-> {})", prev_value.0.account_pubkey, account_pubkey);
+
+            if coll2 {
+                self.collisions += 1;
+            }
+
 
         }
     }
@@ -261,8 +268,8 @@ impl ProgramPrefixBtree {
     }
 
     fn debug(&self) {
-        info!("BTreeMap, count: {}, writes: {}, overwrites: {}",
-            self.count(), self.writes, self.overwrites);
+        info!("BTreeMap, count: {}, writes: {}, overwrites: {}, collisions: {}",
+            self.count(), self.writes, self.overwrites, self.collisions);
     }
 }
 
@@ -281,8 +288,8 @@ impl SpaceJamMap {
         let magic_key = MagicKey::from_pubkeys(owner_pubkey, account_pubkey);
         let account_double_hash32 = fnv32_doublehash_pubkey(&account_pubkey);
         let expanded_key = ExpandedKey {
-            owner_pubkey,
-            account_pubkey,
+            // owner_pubkey,
+            // account_pubkey,
             account_double_hash32
         };
         self.store.insert(magic_key, (expanded_key, value));
