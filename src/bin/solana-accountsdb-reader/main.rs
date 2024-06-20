@@ -22,17 +22,26 @@ use {
     },
 };
 use clap::Parser;
+use solana_accounts_db::account_info::{AccountInfo, StorageLocation};
 use solana_sdk::pubkey::Pubkey;
 
 #[global_allocator]
 pub static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     #[arg(long)]
     pub snapshot_archive_path: String,
+}
+
+
+//
+//
+//
+
+struct AccountStuff {
+    // TODO
 }
 
 #[tokio::main]
@@ -61,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
 
     let before = ALLOCATOR.allocated();
 
-    let mut store: HashMap<Pubkey, ()> = HashMap::new();
+    let mut store = HashMapMapStore::new();
     for snapshot_result in loader.iter() {
         for append_vec in snapshot_result {
             info!("size: {:?}", append_vec.len());
@@ -69,17 +78,40 @@ async fn main() -> anyhow::Result<()> {
             for handle in append_vec_iter(&append_vec) {
                 let stored = handle.access().unwrap();
                 info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-                store.insert(stored.meta.pubkey, ());
+                let stuff = AccountStuff {
+                };
+                store.insert(stored.meta.pubkey, stuff);
             }
         }
     }
 
     let after = ALLOCATOR.allocated();
 
-    info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store.len() as f64);
+    info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store.size() as f64);
 
     Ok(())
 }
+
+struct HashMapMapStore {
+    store: HashMap<Pubkey, AccountStuff>,
+}
+
+impl HashMapMapStore {
+    fn new() -> Self {
+        Self {
+            store: HashMap::new(),
+        }
+    }
+
+    fn insert(&mut self, key: Pubkey, value: AccountStuff) {
+        self.store.insert(key, value);
+    }
+
+    fn size(&self) -> usize {
+        self.store.len()
+    }
+}
+
 
 pub enum SupportedLoader {
     Unpacked(UnpackedSnapshotExtractor),
