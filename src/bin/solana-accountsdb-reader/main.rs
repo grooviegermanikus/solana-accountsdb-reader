@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Instant;
 use cap::Cap;
 use log::{trace, warn};
 use {
@@ -65,16 +66,8 @@ async fn main() -> anyhow::Result<()> {
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
     info!("... opened snapshot archive");
 
-    // for vec in loader.iter() {
-    //     let append_vec =  vec.unwrap();
-    //     info!("size: {:?}", append_vec.len());
-    //     for handle in append_vec_iter(&append_vec) {
-    //         let stored = handle.access().unwrap();
-    //         info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-    //     }
-    // }
-
-
+    let started_at = Instant::now();
+    let mut cnt_append_vecs = 0;
     let before = ALLOCATOR.allocated();
 
     let mut store_hashmapmap = HashMapMapStore::new();
@@ -84,6 +77,10 @@ async fn main() -> anyhow::Result<()> {
             trace!("size: {:?}", append_vec.len());
             trace!("slot: {:?}", append_vec.slot());
             for handle in append_vec_iter(&append_vec) {
+                cnt_append_vecs += 1;
+                if cnt_append_vecs % 100_000 == 0 {
+                    info!("{} append vecs in {:.3}s", cnt_append_vecs, started_at.elapsed().as_secs_f64());
+                }
                 let stored = handle.access().unwrap();
                 trace!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
                 let stuff = AccountStuff {
