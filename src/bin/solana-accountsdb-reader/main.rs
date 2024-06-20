@@ -21,6 +21,7 @@ use {
     },
 };
 use clap::Parser;
+use concurrent_map::{ConcurrentMap, Minimum};
 use fnv::FnvHasher;
 use itertools::Itertools;
 use modular_bitfield::prelude::B31;
@@ -43,6 +44,8 @@ pub struct Args {
 //
 //
 
+// CLone is required by the ConcurrentMap -- TODO check why
+#[derive(Clone)]
 struct AccountStuff {
     // TODO
 }
@@ -109,6 +112,15 @@ struct MagicKey {
     account_pubkey_part: u32,
 }
 
+impl Minimum for MagicKey {
+    const MIN: Self = Self {
+        owner_pubkey_part: 0,
+        account_pubkey_part: 0,
+    };
+}
+
+// note: Clone is only required for the ConcurrentMap -- TODO check why
+#[derive(Clone)]
 struct ExpandedKey {
     pub owner_pubkey: Pubkey,
     pub account_pubkey: Pubkey,
@@ -116,17 +128,21 @@ struct ExpandedKey {
 
 impl MagicKey {
     fn from_pubkeys(owner_pubkey: Pubkey, account_pubkey: Pubkey) -> Self {
-        let mut hasher = FnvHasher::default();
-        hasher.write(account_pubkey.as_ref());
-        let owner_hash64 = hasher.finish();
-
-        let owner_pubkey_part = owner_hash64 as u32;
-        let account_pubkey_part = prefix_from_pubkey(&account_pubkey);
+        let owner_pubkey_part = fnv32_pubkey(&owner_pubkey);
+        let account_pubkey_part = fnv32_pubkey(&account_pubkey);
         Self {
             owner_pubkey_part,
             account_pubkey_part,
         }
     }
+
+}
+
+fn fnv32_pubkey(pubkey: &Pubkey) -> u32 {
+    let mut hasher = FnvHasher::default();
+    hasher.write(pubkey.as_ref());
+    let owner_hash64 = hasher.finish();
+    owner_hash64 as u32
 }
 
 fn prefix_from_pubkey(pubkey: &Pubkey) -> u32 {
@@ -224,6 +240,27 @@ impl ProgramPrefixBtree {
     }
 }
 
+struct SpaceJamMap {
+    store: ConcurrentMap<MagicKey, (ExpandedKey, AccountStuff)>,
+}
+
+impl SpaceJamMap {
+    fn new() -> Self {
+        Self {
+            store: ConcurrentMap::new(),
+        }
+    }
+
+    fn store(&self, account_pubkey: Pubkey, owner_pubkey: Pubkey, value: AccountStuff) {
+        let magic_key = MagicKey::from_pubkeys(owner_pubkey, account_pubkey);
+        let expanded_key = ExpandedKey {
+            owner_pubkey,
+            account_pubkey,
+        };
+        self.store.insert(magic_key, (expanded_key, value));
+    }
+}
+
 
 pub enum SupportedLoader {
     Unpacked(UnpackedSnapshotExtractor),
@@ -298,5 +335,11 @@ fn test_magic_key() {
 }
 
 
+#[test]
+fn test_fnv_collision() {
+    let key1 = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+    let key2 = Pubkey::from_str("11111111111111111111111111111111").unwrap();
+    assert_ne!(fnv32_pubkey(&key1), fnv32_pubkey(&key2));
+}
 
 
