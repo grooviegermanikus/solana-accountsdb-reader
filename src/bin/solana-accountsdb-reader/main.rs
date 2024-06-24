@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
+
     let Args { snapshot_archive_path } = Args::parse();
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
@@ -79,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
             for handle in append_vec_iter(&append_vec) {
                 cnt_append_vecs += 1;
                 if cnt_append_vecs % 100_000 == 0 {
-                    info!("{} append vecs in {:.3}s (speed {:.0}/s)",
+                    info!("{} append vecs after {:.3}s (speed {:.0}/s)",
                         cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                 }
                 let stored = handle.access().unwrap();
@@ -100,6 +101,15 @@ async fn main() -> anyhow::Result<()> {
 
     store_hashmapmap.debug();
     store_btree.debug();
+
+
+    // find progtrams with many accounts
+    store_hashmapmap.store.iter()
+        .map(|(owner_pubkey, account_pks)| (owner_pubkey, account_pks.len()))
+        .sorted_by_key(|(_, count)| *count).rev().take(30)
+        .for_each(|(owner_pubkey, count)| {
+        info!("owner {:?} has {} accounts", owner_pubkey, count);
+    });
 
     Ok(())
 }
