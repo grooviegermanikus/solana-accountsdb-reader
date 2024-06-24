@@ -208,7 +208,7 @@ impl HashMapMapStore {
 
 struct ProgramPrefixBtree {
     // TODO add account_key + owner_key to detect collisions
-    store: BTreeMap<MagicKey, (ExpandedKey, AccountStuff)>,
+    store: ConcurrentMap<MagicKey, (ExpandedKey, AccountStuff), 256/*FANOUT*/, 1024/*LOCAL_GC_BUFFER_SIZE*/>,
     writes: usize,
     overwrites: usize,
     collisions: usize,
@@ -217,7 +217,7 @@ struct ProgramPrefixBtree {
 impl ProgramPrefixBtree {
     fn new() -> Self {
         Self {
-            store: BTreeMap::new(),
+            store: ConcurrentMap::new(),
             writes: 0,
             overwrites: 0,
             collisions: 0,
