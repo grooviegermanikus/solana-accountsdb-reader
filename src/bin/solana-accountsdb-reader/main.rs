@@ -91,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
             for chunk in &append_vec_iter(&append_vec).chunks(128) {
                 let mut write_batch = sled::Batch::default();
 
+
                 for handle in chunk {
                     cnt_append_vecs += 1;
                     if cnt_append_vecs % 100_000 == 0 {
