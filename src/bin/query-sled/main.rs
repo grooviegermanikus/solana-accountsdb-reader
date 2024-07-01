@@ -23,6 +23,10 @@ async fn main() -> anyhow::Result<()> {
 
     }
 
+    sled_store.flush().unwrap();
+
+    db.flush().unwrap();
+
 
     Ok(())
 }
