@@ -15,9 +15,9 @@ async fn main() -> anyhow::Result<()> {
 
 
     let somekey = Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap();
-    let mango_accounts = sled_store.scan_prefix(somekey.as_ref()).next().unwrap();
+    let mango_accounts = sled_store.scan_prefix(somekey.as_ref());
 
-    for (key_pair, _value) in mango_accounts {
+    for (key_pair, _value) in mango_accounts.map(|x| x.unwrap()) {
         let account_key = Pubkey::new_from_array(key_pair[PUBKEY_BYTES..].try_into().unwrap());
         println!("key: {}", account_key.to_string());
 
