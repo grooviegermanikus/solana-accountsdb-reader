@@ -337,8 +337,13 @@ impl SpaceJamMap {
     fn new() -> Self {
         let config = sled::Config::default()
             .path("sled.db")
-            .cache_capacity(2_000_000_000)
-            .flush_every_ms(Some(1000));
+            .mode(sled::Mode::HighThroughput)
+            // compression features disabled cos of dependency mess
+            // .use_compression(true)
+            // .compression_factor(3)
+            .cache_capacity(512 * 1024 * 1024)
+            .flush_every_ms(Some(1000))
+            .print_profile_on_drop(true);
         let db = config.open().unwrap();
         let accounts_tree = db.open_tree("accounts").unwrap();
         // accounts_tree.insert("key", "value")?;
