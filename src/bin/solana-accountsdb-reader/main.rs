@@ -26,8 +26,17 @@ use concurrent_map::{ConcurrentMap, Minimum};
 use fnv::FnvHasher;
 use itertools::Itertools;
 use modular_bitfield::prelude::B31;
+use serde::Serialize;
+use sled::Tree;
 use solana_accounts_db::account_info::{AccountInfo, StorageLocation};
-use solana_sdk::pubkey::Pubkey;
+use solana_accounts_db::accounts_db::{ACCOUNTS_DB_CONFIG_FOR_TESTING, AccountShrinkThreshold};
+use solana_accounts_db::accounts_index::AccountSecondaryIndexes;
+use solana_runtime::genesis_utils::create_genesis_config;
+use solana_runtime::runtime_config::RuntimeConfig;
+use solana_runtime::snapshot_archive_info::FullSnapshotArchiveInfo;
+use solana_runtime::snapshot_bank_utils::bank_from_snapshot_archives;
+use solana_sdk::native_token::sol_to_lamports;
+use solana_sdk::pubkey::{Pubkey, PUBKEY_BYTES};
 use solana_accountsdb_reader::parallel::AppendVecConsumer;
 
 #[global_allocator]
@@ -35,7 +44,7 @@ pub static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usi
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
-pub struct Args {
+struct Args {
     #[arg(long)]
     pub snapshot_archive_path: String,
 }
@@ -46,7 +55,7 @@ pub struct Args {
 //
 
 // CLone is required by the ConcurrentMap -- TODO check why
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 struct AccountStuff {
     // TODO
 }
@@ -71,45 +80,81 @@ async fn main() -> anyhow::Result<()> {
     let mut cnt_append_vecs = 0;
     let before = ALLOCATOR.allocated();
 
-    let mut store_hashmapmap = HashMapMapStore::new();
-    let mut store_btree = ProgramPrefixBtree::new();
+    // let mut store_hashmapmap = HashMapMapStore::new();
+    // let mut store_btree = ProgramPrefixBtree::new();
+    let mut store_sled = SpaceJamMap::new();
     for snapshot_result in loader.iter() {
         for append_vec in snapshot_result {
             trace!("size: {:?}", append_vec.len());
             trace!("slot: {:?}", append_vec.slot());
-            for handle in append_vec_iter(&append_vec) {
-                cnt_append_vecs += 1;
-                if cnt_append_vecs % 100_000 == 0 {
-                    info!("{} append vecs after {:.3}s (speed {:.0}/s)",
-                        cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
+
+            for chunk in &append_vec_iter(&append_vec).chunks(128) {
+                let mut write_batch = sled::Batch::default();
+
+                for handle in chunk {
+                    cnt_append_vecs += 1;
+                    if cnt_append_vecs % 100_000 == 0 {
+                        info!("{} append vecs after {:.3}s (speed {:.0}/s)",
+                            cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
+                    }
+                    let stored = handle.access().unwrap();
+                    let account_pubkey = stored.meta.pubkey;
+                    let owner_pubkey = stored.account_meta.owner;
+
+                    let stuff = AccountStuff {
+                    };
+
+                    let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
+                    key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
+                    key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
+
+                    write_batch.insert(key_bytes.as_ref(), bincode::serialize(&stuff).unwrap());
                 }
-                let stored = handle.access().unwrap();
-                trace!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-                let stuff = AccountStuff {
-                };
-                store_hashmapmap.store(stored.meta.pubkey, stored.account_meta.owner, stuff);
-                let stuff = AccountStuff {
-                };
-                store_btree.store(stored.meta.pubkey, stored.account_meta.owner, stuff);
+                store_sled.store.apply_batch(write_batch).unwrap();
+
             }
+
+            // for handle in append_vec_iter(&append_vec) {
+            //     cnt_append_vecs += 1;
+            //     if cnt_append_vecs % 100_000 == 0 {
+            //         info!("{} append vecs after {:.3}s (speed {:.0}/s)",
+            //             cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
+            //     }
+            //     let stored = handle.access().unwrap();
+            //     trace!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
+            //
+            //     // let stuff = AccountStuff {
+            //     // };
+            //     // store_hashmapmap.store(stored.meta.pubkey, stored.account_meta.owner, stuff);
+            //     //
+            //     // let stuff = AccountStuff {
+            //     // };
+            //     // store_btree.store(stored.meta.pubkey, stored.account_meta.owner, stuff);
+            //
+            //     let stuff = AccountStuff {
+            //     };
+            //     store_sled.store(stored.meta.pubkey, stored.account_meta.owner, stuff);
+            //
+            // }
         }
     }
 
     let after = ALLOCATOR.allocated();
 
-    info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store_hashmapmap.total_count() as f64);
+    // info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store_hashmapmap.total_count() as f64);
 
-    store_hashmapmap.debug();
-    store_btree.debug();
+    // store_hashmapmap.debug();
+    // store_btree.debug();
+    store_sled.debug();
 
 
     // find progtrams with many accounts
-    store_hashmapmap.store.iter()
-        .map(|(owner_pubkey, account_pks)| (owner_pubkey, account_pks.len()))
-        .sorted_by_key(|(_, count)| *count).rev().take(30)
-        .for_each(|(owner_pubkey, count)| {
-        info!("owner {:?} has {} accounts", owner_pubkey, count);
-    });
+    // store_hashmapmap.store.iter()
+    //     .map(|(owner_pubkey, account_pks)| (owner_pubkey, account_pks.len()))
+    //     .sorted_by_key(|(_, count)| *count).rev().take(30)
+    //     .for_each(|(owner_pubkey, count)| {
+    //     info!("owner {:?} has {} accounts", owner_pubkey, count);
+    // });
 
     Ok(())
 }
@@ -284,25 +329,49 @@ impl ProgramPrefixBtree {
 }
 
 struct SpaceJamMap {
-    store: ConcurrentMap<MagicKey, (ExpandedKey, AccountStuff)>,
+    db: sled::Db,
+    store: Tree,
 }
 
 impl SpaceJamMap {
     fn new() -> Self {
+        let config = sled::Config::default()
+            .path("sled.db")
+            .cache_capacity(2_000_000_000)
+            .flush_every_ms(Some(1000));
+        let db = config.open().unwrap();
+        let accounts_tree = db.open_tree("accounts").unwrap();
+        // accounts_tree.insert("key", "value")?;
         Self {
-            store: ConcurrentMap::new(),
+            db,
+            store: accounts_tree,
         }
     }
 
+    // speed 38552/s on macbook
     fn store(&self, account_pubkey: Pubkey, owner_pubkey: Pubkey, value: AccountStuff) {
-        let magic_key = MagicKey::from_pubkeys(owner_pubkey, account_pubkey);
-        let account_double_hash32 = fnv32_doublehash_pubkey(&account_pubkey);
-        let expanded_key = ExpandedKey {
-            // owner_pubkey,
-            // account_pubkey,
-            account_double_hash32
-        };
-        self.store.insert(magic_key, (expanded_key, value));
+        let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
+        key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
+        key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
+
+        self.store.insert(key_bytes, bincode::serialize(&value).unwrap()).unwrap();
+    }
+
+    fn debug(&self) {
+        info!("SledMap, count: {}", self.store.len());
+        let somekey = Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap();
+        let left = self.store.get_lt(&somekey).unwrap()
+            .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
+        let right = self.store.get_gt(&somekey).unwrap()
+            .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
+        info!("left: {:?}, right: {:?}", left.to_string(), right.to_string());
+
+        info!("db size: {}", self.db.size_on_disk().unwrap());
+
+        let prefix = [12u8];
+        let scan_matches = self.store.scan_prefix(&prefix).map(|r| r.unwrap()).count();
+        info!("scanning matched {}", scan_matches);
+
     }
 }
 
