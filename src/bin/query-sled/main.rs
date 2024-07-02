@@ -1,5 +1,16 @@
 use std::str::FromStr;
+use const_env::from_env;
+use sled::{Db, Tree};
 use solana_sdk::pubkey::{Pubkey, PUBKEY_BYTES};
+
+#[from_env]
+const LEAF_FANOUT: usize = 32;
+
+struct SpaceJamMap {
+    db: sled::Db<LEAF_FANOUT>,
+    store: Tree<LEAF_FANOUT>,
+}
+
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -7,10 +18,14 @@ async fn main() -> anyhow::Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
+    let config = sled::Config::default()
+        .path("sled.db")
+        .cache_capacity_bytes(512 * 1024 * 1024)
+        .flush_every_ms(Some(1000))
+        ;
+    let db = config.open().unwrap();
 
-    let db = sled::open("sled.db").unwrap();
-
-    let sled_store = db.open_tree("accounts").unwrap();
+    let sled_store: Tree<32> = db.open_tree("accounts").unwrap();
     println!("len: {}", sled_store.len());
 
 
