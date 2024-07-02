@@ -355,9 +355,11 @@ impl ProgramPrefixBtree {
     }
 }
 
+#[from_env]
+const LEAF_FANOUT: usize = 32;
 struct SpaceJamMap {
-    db: sled::Db,
-    store: Tree,
+    db: sled::Db<LEAF_FANOUT>,
+    store: Tree<LEAF_FANOUT>,
 }
 
 impl SpaceJamMap {
