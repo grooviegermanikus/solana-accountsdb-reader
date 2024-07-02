@@ -148,6 +148,8 @@ async fn main() -> anyhow::Result<()> {
     // store_btree.debug();
     store_sled.debug();
 
+    store_sled.shutdown();
+
 
     // find progtrams with many accounts
     // store_hashmapmap.store.iter()
@@ -338,13 +340,13 @@ impl SpaceJamMap {
     fn new() -> Self {
         let config = sled::Config::default()
             .path("sled.db")
-            .mode(sled::Mode::HighThroughput)
+            // .mode(sled::Mode::HighThroughput)
             // compression features disabled cos of dependency mess
             // .use_compression(true)
             // .compression_factor(3)
-            .cache_capacity(512 * 1024 * 1024)
+            .cache_capacity_bytes(512 * 1024 * 1024)
             .flush_every_ms(Some(1000))
-            .print_profile_on_drop(true);
+            ;
         let db = config.open().unwrap();
         let accounts_tree = db.open_tree("accounts").unwrap();
         // accounts_tree.insert("key", "value")?;
@@ -363,6 +365,11 @@ impl SpaceJamMap {
         self.store.insert(key_bytes, bincode::serialize(&value).unwrap()).unwrap();
     }
 
+    fn shutdown(&self) {
+        self.store.flush().unwrap();
+        self.db.flush().unwrap();
+    }
+
     fn debug(&self) {
         info!("SledMap, count: {}", self.store.len());
         let somekey = Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap();
@@ -379,6 +386,7 @@ impl SpaceJamMap {
         info!("scanning matched {}", scan_matches);
 
     }
+
 }
 
 

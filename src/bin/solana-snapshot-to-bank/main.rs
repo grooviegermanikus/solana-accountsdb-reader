@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     bank_from_snapshot.get_program_accounts(&program_key, &ScanConfig::default()).expect("should find program");
 
 
-    let accounts_db = solana_accounts_db::accounts_db::AccountsDb::new_single_for_tests_with_caching();
+    // let accounts_db = solana_accounts_db::accounts_db::AccountsDb::new_single_for_tests_with_caching();
 
 
     Ok(())
