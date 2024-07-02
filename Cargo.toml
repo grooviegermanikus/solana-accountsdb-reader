@@ -34,6 +34,7 @@ zstd = "0.11.2"
 clap = { version = "4.5.4", features = ["derive"] }
 
 # groovie
+const_env = "0.1.2"
 cap = "0.1.2"
 sled = { git = "https://github.com/spacejam/sled.git", branch = "project_bloodstone" }
 concurrent-map = "5.0"

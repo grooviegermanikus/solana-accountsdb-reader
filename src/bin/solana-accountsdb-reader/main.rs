@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 use cap::Cap;
-use log::{trace, warn};
+use log::{debug, trace, warn};
 use {
     log::info,
     reqwest::blocking::Response,
@@ -23,6 +23,7 @@ use {
 };
 use clap::Parser;
 use concurrent_map::{ConcurrentMap, Minimum};
+use const_env::from_env;
 use fnv::FnvHasher;
 use itertools::Itertools;
 use modular_bitfield::prelude::B31;
@@ -50,6 +51,11 @@ struct Args {
 }
 
 
+#[from_env]
+const WRITE_BATCH_SORTED: bool = false;
+#[from_env]
+const WRITE_BATCH_SIZE: usize = 128;
+
 //
 //
 //
@@ -68,6 +74,9 @@ async fn main() -> anyhow::Result<()> {
 
 
     let Args { snapshot_archive_path } = Args::parse();
+
+    info!("WRITE_BATCH_SIZE: {}", WRITE_BATCH_SIZE);
+    info!("WRITE_BATCH_SORTED: {}", WRITE_BATCH_SORTED);
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
@@ -88,10 +97,10 @@ async fn main() -> anyhow::Result<()> {
             trace!("size: {:?}", append_vec.len());
             trace!("slot: {:?}", append_vec.slot());
 
-            for chunk in &append_vec_iter(&append_vec).chunks(128) {
-                let mut write_batch = sled::Batch::default();
+            for chunk in &append_vec_iter(&append_vec).chunks(WRITE_BATCH_SIZE) {
 
-
+                // 60-128 items
+                let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
                 for handle in chunk {
                     cnt_append_vecs += 1;
                     if cnt_append_vecs % 100_000 == 0 {
@@ -109,8 +118,23 @@ async fn main() -> anyhow::Result<()> {
                     key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
                     key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
 
-                    write_batch.insert(key_bytes.as_ref(), bincode::serialize(&stuff).unwrap());
+                    // TODO do not clone
+                    batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
+                    // write_batch.insert(key_bytes.as_ref(), bincode::serialize(&stuff).unwrap());
+
                 }
+
+                if WRITE_BATCH_SORTED {
+                    batch.sort_by(|(a, _), (b, _)| a.cmp(b));
+                    trace!("sort batch of {} items", batch.len());
+                }
+
+
+                let mut write_batch = sled::Batch::default();
+                for (key, value) in batch {
+                    write_batch.insert(&key, value);
+                }
+
                 store_sled.store.apply_batch(write_batch).unwrap();
 
             }
