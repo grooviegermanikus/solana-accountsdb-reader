@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
 use std::path::PathBuf;
 use std::str::FromStr;
+use ahash::HashMapExt;
 use std::time::Instant;
 use cap::Cap;
 use log::{debug, trace, warn};
@@ -24,9 +25,10 @@ use {
 use clap::Parser;
 use concurrent_map::{ConcurrentMap, Minimum};
 use const_env::from_env;
-use fnv::FnvHasher;
+use fnv::{FnvHasher, FnvHashMap};
 use itertools::Itertools;
 use modular_bitfield::prelude::B31;
+use qp_trie::Trie;
 use serde::Serialize;
 use sled::Tree;
 use solana_accounts_db::account_info::{AccountInfo, StorageLocation};
@@ -87,20 +89,24 @@ async fn main() -> anyhow::Result<()> {
 
     let started_at = Instant::now();
     let mut cnt_append_vecs = 0;
-    let before = ALLOCATOR.allocated();
+    // let mut alloc_trie_only = 0;
 
-    // let mut store_hashmapmap = HashMapMapStore::new();
+    let mut store_hashmapmap = HashMapMapStore::new();
     // let mut store_btree = ProgramPrefixBtree::new();
     let mut store_sled = SpaceJamMap::new();
+
+    // let mut trie = Trie::new();
+
+    let before = ALLOCATOR.allocated();
     for snapshot_result in loader.iter() {
-        for append_vec in snapshot_result {
+        if let Ok(append_vec) = snapshot_result {
             trace!("size: {:?}", append_vec.len());
             trace!("slot: {:?}", append_vec.slot());
 
             for chunk in &append_vec_iter(&append_vec).chunks(WRITE_BATCH_SIZE) {
 
                 // 60-128 items
-                let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+                // let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
                 for handle in chunk {
                     cnt_append_vecs += 1;
                     if cnt_append_vecs % 100_000 == 0 {
@@ -111,31 +117,40 @@ async fn main() -> anyhow::Result<()> {
                     let account_pubkey = stored.meta.pubkey;
                     let owner_pubkey = stored.account_meta.owner;
 
-                    let stuff = AccountStuff {
-                    };
+                    // let stuff = AccountStuff {
+                    // };
+                    //
+                    // let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
+                    // key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
+                    // key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
+                    //
+                    // // TODO do not clone
+                    // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
 
-                    let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
-                    key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
-                    key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
+                    // let before_trie = ALLOCATOR.allocated();
+                    // trie.insert(account_pubkey.to_bytes(), "");
+                    // let after_trie = ALLOCATOR.allocated();
+                    // alloc_trie_only += after_trie - before_trie;
 
-                    // TODO do not clone
-                    batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
-                    // write_batch.insert(key_bytes.as_ref(), bincode::serialize(&stuff).unwrap());
+                    // let stuff = AccountStuff {
+                    // };
+                    // store_hashmapmap.store(owner_pubkey, account_pubkey, stuff);
+
+
 
                 }
 
-                if WRITE_BATCH_SORTED {
-                    batch.sort_by(|(a, _), (b, _)| a.cmp(b));
-                    trace!("sort batch of {} items", batch.len());
-                }
-
-
-                let mut write_batch = sled::Batch::default();
-                for (key, value) in batch {
-                    write_batch.insert(&key, value);
-                }
-
-                store_sled.store.apply_batch(write_batch).unwrap();
+                // if WRITE_BATCH_SORTED {
+                //     batch.sort_by(|(a, _), (b, _)| a.cmp(b));
+                //     trace!("sort batch of {} items", batch.len());
+                // }
+                //
+                // let mut write_batch = sled::Batch::default();
+                // for (key, value) in batch {
+                //     write_batch.insert(&key, value);
+                // }
+                //
+                // store_sled.store.apply_batch(write_batch).unwrap();
 
             }
 
@@ -166,9 +181,14 @@ async fn main() -> anyhow::Result<()> {
 
     let after = ALLOCATOR.allocated();
 
-    // info!("HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / store_hashmapmap.total_count() as f64);
+    // [2024-07-03T17:12:40Z INFO  solana_accountsdb_reader] TOTAL HEAP allocated: 6878026235 (86.58/acc)
+    // [2024-07-03T17:12:40Z INFO  solana_accountsdb_reader] HEAP FOR TRIES allocated: 6033728560 (75.95/acc)
 
-    // store_hashmapmap.debug();
+    info!("TOTAL HEAP allocated: {}", after - before);
+    // info!("TOTAL HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / trie.count() as f64);
+    // info!("HEAP FOR TRIES allocated: {} ({:.2}/acc)", alloc_trie_only, alloc_trie_only as f64 / trie.count() as f64);
+
+    store_hashmapmap.debug();
     // store_btree.debug();
     store_sled.debug();
 
@@ -176,12 +196,12 @@ async fn main() -> anyhow::Result<()> {
 
 
     // find progtrams with many accounts
-    // store_hashmapmap.store.iter()
-    //     .map(|(owner_pubkey, account_pks)| (owner_pubkey, account_pks.len()))
-    //     .sorted_by_key(|(_, count)| *count).rev().take(30)
-    //     .for_each(|(owner_pubkey, count)| {
-    //     info!("owner {:?} has {} accounts", owner_pubkey, count);
-    // });
+    store_hashmapmap.store.iter()
+        .map(|(owner_pubkey, account_pks)| (owner_pubkey, account_pks.len()))
+        .sorted_by_key(|(_, count)| *count).rev().take(30)
+        .for_each(|(owner_pubkey, count)| {
+        info!("owner {:?} has {} accounts", owner_pubkey, count);
+    });
 
     Ok(())
 }
@@ -247,7 +267,7 @@ fn prefix_from_pubkey(pubkey: &Pubkey) -> u32 {
 
 struct HashMapMapStore {
     // owner/program pubkey -> account pubkey -> account stuff
-    store: HashMap<Pubkey, HashMap<Pubkey, AccountStuff>>,
+    store: FnvHashMap<Pubkey, FnvHashMap<Pubkey, AccountStuff>>,
     writes: usize,
     overwrites: usize,
 }
@@ -255,7 +275,7 @@ struct HashMapMapStore {
 impl HashMapMapStore {
     fn new() -> Self {
         Self {
-            store: HashMap::new(),
+            store: FnvHashMap::new(),
             writes: 0,
             overwrites: 0,
         }
@@ -265,7 +285,7 @@ impl HashMapMapStore {
         self.writes += 1;
 
         let replacement = self.store.entry(owner_pubkey)
-            .or_insert_with(HashMap::new) // TODO set default capacity
+            .or_insert_with(FnvHashMap::new) // TODO set default capacity
             .insert(account_pubkey, value);
 
         if replacement.is_some() {
