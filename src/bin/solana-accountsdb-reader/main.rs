@@ -442,7 +442,7 @@ impl SpaceJamMap {
             // .use_compression(true)
             // .compression_factor(3)
             .cache_capacity_bytes(512 * 1024 * 1024)
-            .flush_every_ms(Some(usize::MAX))
+            .flush_every_ms(Some(5000))
             ;
         let db = config.open().unwrap();
         let accounts_tree = db.open_tree("accounts").unwrap();
