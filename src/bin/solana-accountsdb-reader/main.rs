@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use ahash::HashMapExt;
 use std::time::Instant;
+use bloomfilter::Bloom;
 use cap::Cap;
 use log::{debug, trace, warn};
 use {
@@ -96,6 +97,8 @@ async fn main() -> anyhow::Result<()> {
     let mut store_sled = SpaceJamMap::new();
 
     // let mut trie = Trie::new();
+    let mut bloom = Bloom::new_for_fp_rate(1_000_000_000, 0.001);
+
 
     let before = ALLOCATOR.allocated();
     for snapshot_result in loader.iter() {
@@ -136,6 +139,8 @@ async fn main() -> anyhow::Result<()> {
                     // };
                     // store_hashmapmap.store(owner_pubkey, account_pubkey, stuff);
 
+
+                    bloom.set(&account_pubkey);
 
 
                 }
@@ -183,6 +188,21 @@ async fn main() -> anyhow::Result<()> {
 
     // [2024-07-03T17:12:40Z INFO  solana_accountsdb_reader] TOTAL HEAP allocated: 6878026235 (86.58/acc)
     // [2024-07-03T17:12:40Z INFO  solana_accountsdb_reader] HEAP FOR TRIES allocated: 6033728560 (75.95/acc)
+
+    info!("BLOOM {}", bloom.bit_vec().count_ones());
+    info!("BLOOM {} bytes", bloom.bit_vec().to_bytes().len());
+
+    let mut cnt_false_positives = 0;
+    for _ in 0..10000 {
+        let key = Pubkey::new_unique();
+        let key_bytes = key.to_bytes();
+        let res = bloom.check(&key);
+        if res {
+            cnt_false_positives += 1;
+        }
+    }
+    warn!("false positives : {}", cnt_false_positives);
+
 
     info!("TOTAL HEAP allocated: {}", after - before);
     // info!("TOTAL HEAP allocated: {} ({:.2}/acc)", after - before, (after - before) as f64 / trie.count() as f64);

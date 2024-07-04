@@ -1,13 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use clap::Parser;
-use solana_accounts_db::accounts_db::{ACCOUNTS_DB_CONFIG_FOR_TESTING, AccountShrinkThreshold};
+use solana_accounts_db::accounts_db::{ACCOUNTS_DB_CONFIG_FOR_TESTING, AccountsDb, AccountShrinkThreshold};
 use solana_accounts_db::accounts_index::{AccountSecondaryIndexes, ScanConfig};
 use solana_runtime::genesis_utils::create_genesis_config;
 use solana_runtime::runtime_config::RuntimeConfig;
 use solana_runtime::snapshot_archive_info::FullSnapshotArchiveInfo;
 use solana_runtime::snapshot_bank_utils::bank_from_snapshot_archives;
+use solana_sdk::genesis_config::{ClusterType, GenesisConfig};
 use solana_sdk::native_token::sol_to_lamports;
 use solana_sdk::pubkey::Pubkey;
 
@@ -31,8 +32,11 @@ async fn main() -> anyhow::Result<()> {
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
 
-    let genesis_config = create_genesis_config(sol_to_lamports(1_000_000.)).genesis_config;
-    let accounts_dir = PathBuf::from_str("accounts").unwrap();
+    let ledger_path = Path::new("/Users/stefan/mango/projects/accountsdb-how-it-works/testnet-ledger");
+    let genesis_config = GenesisConfig::load(ledger_path).unwrap();
+    // let
+    //     genesis_config = create_genesis_config(sol_to_lamports(1_000_000.)).genesis_config;
+    let accounts_dir = PathBuf::from_str("/Users/stefan/mango/projects/accountsdb-how-it-works/accountsdb-testnet").unwrap();
     // must esist
     let bank_snapshots_dir = PathBuf::from_str("snapshots-unpack").unwrap();
 
@@ -60,11 +64,27 @@ async fn main() -> anyhow::Result<()> {
         .unwrap();
 
     let program_key = Pubkey::from_str("89A6cnoZMhsxKQzgJvQZS8UsTnojef5YW4z23Do1GuXv").unwrap();
-    bank_from_snapshot.get_program_accounts(&program_key, &ScanConfig::default()).expect("should find program");
+    // let accounts = bank_from_snapshot.get_program_accounts(&program_key, &ScanConfig::default()).expect("should find program");
+    // let accccc = bank_from_snapshot.accounts();
+    // let accounts_db = accccc.accounts_db.as_ref();
+    let all_tokens = bank_from_snapshot.get_program_accounts(&Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(), &ScanConfig::default()).unwrap();
+    for acc in all_tokens {
+        println!("{:?}", acc);
+
+    }
 
 
-    // let accounts_db = solana_accounts_db::accounts_db::AccountsDb::new_single_for_tests_with_caching();
+    // let accountsdb_path = PathBuf::from_str("accounts").unwrap();
 
+    // let accounts_db =  AccountsDb::new_with_config(
+    //     vec![accountsdb_path],
+    //     &ClusterType::Development,
+    //     AccountSecondaryIndexes::default(),
+    //     AccountShrinkThreshold::default(),
+    //     Some(ACCOUNTS_DB_CONFIG_FOR_TESTING),
+    //     None,
+    //     Arc::default(),
+    // );
 
     Ok(())
 }

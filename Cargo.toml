@@ -42,6 +42,7 @@ modular-bitfield = "0.11.2"
 fnv = "1.0.7"
 qp-trie = "0.8.2"
 ahash = "0.8.11"
+bloomfilter = "1.0.14"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"
