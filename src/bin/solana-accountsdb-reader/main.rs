@@ -66,7 +66,7 @@ const WRITE_BATCH_BUFFER_SIZE: usize = 16;
 const WRITE_BATCH_N_THREADS: usize = 4;
 
 #[from_env]
-const READ_N_THREADS: usize = 2;
+const READ_N_THREADS: usize = 0;
 
 //
 //
@@ -110,16 +110,30 @@ async fn main() -> anyhow::Result<()> {
     // let mut trie = Trie::new();
     let mut bloom = Bloom::new_for_fp_rate(1_000_000_000, 0.001);
 
-    let (tx_sled_writer, rx) = crossbeam_channel::bounded::<sled::Batch>(WRITE_BATCH_BUFFER_SIZE);
+    let (tx_sled_writer, rx) = crossbeam_channel::bounded::<Box<[(Pubkey, Vec<u8>)]>>(WRITE_BATCH_BUFFER_SIZE);
 
     for i in 0..WRITE_BATCH_N_THREADS {
-        let sled_write_tree = store_sled.store.clone();
+        let sled_write_tree = store_sled.binned_stores.clone();
         let rx = rx.clone();
         spawn(move || {
             loop {
                 match rx.recv() {
                     Ok(batch) => {
-                        sled_write_tree.apply_batch(batch).unwrap();
+                        info!("received batch of {} items in thread {:?}", batch.len(), std::thread::current().id());
+                        for (bin, group) in &batch.iter().group_by(|(account_key, _)| {
+                            let bin = bin_from_pubkey(&account_key);
+                            bin
+                        }) {
+                            let mut batch = sled::Batch::default();
+                            for (account_key, value) in group {
+                                // info!("writing {:?} to bin {}", account_key, bin);
+                                batch.insert(&account_key.to_bytes(), value.as_slice());
+                            }
+                            // sled_write_tree[bin].insert(account_key.to_bytes(), value.as_slice()).unwrap();
+                            sled_write_tree[bin].apply_batch(batch).unwrap();
+                        }
+
+                        // sled_write_tree.apply_batch(batch).unwrap();
                         trace!("wrote batch in thread {:?}", std::thread::current().id());
                     }
                     Err(_) => {
@@ -162,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
                 let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
                 for handle in chunk {
                     cnt_append_vecs += 1;
-                    if cnt_append_vecs % 100_000 == 0 {
+                    if cnt_append_vecs % 100 == 0 {
                         info!("{} append vecs and {} in store after {:.3}s (speed {:.0}/s)",
                             cnt_append_vecs, store_sled.store.len(), started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                     }
@@ -173,12 +187,13 @@ async fn main() -> anyhow::Result<()> {
                     let stuff = AccountStuff {
                     };
 
-                    let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
-                    key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
-                    key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
+                    // let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
+                    // key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
+                    // key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
 
                     // TODO do not clone
-                    batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
+                    // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
+                    batch.push((account_pubkey, bincode::serialize(&stuff).unwrap()));
 
                     // let before_trie = ALLOCATOR.allocated();
                     // trie.insert(account_pubkey.to_bytes(), "");
@@ -200,11 +215,8 @@ async fn main() -> anyhow::Result<()> {
                 //     trace!("sort batch of {} items", batch.len());
                 // }
                 //
-                let mut write_batch = sled::Batch::default();
-                for (key, value) in batch {
-                    write_batch.insert(key.as_slice(), value);
-                }
-                tx_sled_writer.send(write_batch).unwrap();
+
+                tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
 
                 let n_buffered = tx_sled_writer.len();
                 if n_buffered > WRITE_BATCH_BUFFER_SIZE / 2 {
@@ -454,35 +466,54 @@ impl ProgramPrefixBtree {
     }
 }
 
+
+// 11 -> 8k bins
+const BIN_SHIFT_BITS: usize = 3;
+
+#[inline]
+fn bin_from_pubkey(pubkey: &Pubkey) -> usize {
+    let as_ref = pubkey.as_ref();
+    ((as_ref[0] as usize) << 16 | (as_ref[1] as usize) << 8 | (as_ref[2] as usize))
+        >> BIN_SHIFT_BITS
+}
+
+#[test]
+fn foo() {
+    let pubkey = Pubkey::new_from_array([1u8; PUBKEY_BYTES]);
+    println!("pubkey: {}", pubkey.to_string());
+
+    let bin = bin_from_pubkey(&pubkey);
+
+    println!("bin: {}", bin);
+
+}
+
 struct SpaceJamMap {
     db: sled::Db,
+    // legacy
     store: Tree,
+    binned_stores: Arc<[Tree]>,
 }
 
 impl SpaceJamMap {
     fn new() -> Self {
         let config = sled::Config::default()
             .path("sled.db")
-            .temporary(true)
             .mode(sled::Mode::HighThroughput)
             .cache_capacity(512 * 1024 * 1024)
             .flush_every_ms(Some(5000))
             ;
         let db = config.open().unwrap();
-        let accounts_tree = db.open_tree("accounts").unwrap();
+
+        let binned_trees: Arc<[Tree]> = (0..(1 << (24 - BIN_SHIFT_BITS))).map(|bin| {
+            db.open_tree(format!("accounts-{}", bin)).unwrap()
+        }).collect();
+        let legacy_accounts_tree = db.open_tree("accounts").unwrap();
         Self {
             db,
-            store: accounts_tree,
+            store: legacy_accounts_tree,
+            binned_stores: binned_trees,
         }
-    }
-
-    // speed 38552/s on macbook
-    fn store(&self, account_pubkey: Pubkey, owner_pubkey: Pubkey, value: AccountStuff) {
-        let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
-        key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
-        key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
-
-        self.store.insert(key_bytes, bincode::serialize(&value).unwrap()).unwrap();
     }
 
     fn shutdown(&self) {
