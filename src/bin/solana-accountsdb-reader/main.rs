@@ -207,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
                 tx_sled_writer.send(write_batch).unwrap();
 
                 let n_buffered = tx_sled_writer.len();
-                if n_buffered > 1000 {
+                if n_buffered > WRITE_BATCH_BUFFER_SIZE / 2 {
                     warn!("{} batches buffered", n_buffered);
                 }
 
