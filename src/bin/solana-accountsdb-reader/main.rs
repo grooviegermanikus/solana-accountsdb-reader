@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::mpsc::channel;
 use std::thread::spawn;
 use ahash::HashMapExt;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use bloomfilter::Bloom;
 use cap::Cap;
 use log::{debug, trace, warn};
@@ -56,14 +56,17 @@ struct Args {
 }
 
 
-//useless
-// #[from_env]
-// const WRITE_BATCH_SORTED: bool = false;
 #[from_env]
-const WRITE_BATCH_SIZE: usize = 65536;
+const WRITE_BATCH_SIZE: usize = 64 * 1024;
+
+#[from_env]
+const WRITE_BATCH_BUFFER_SIZE: usize = 16;
 
 #[from_env]
 const WRITE_BATCH_N_THREADS: usize = 4;
+
+#[from_env]
+const READ_N_THREADS: usize = 2;
 
 //
 //
@@ -105,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
     // let mut trie = Trie::new();
     let mut bloom = Bloom::new_for_fp_rate(1_000_000_000, 0.001);
 
-    let (tx_sled_writer, rx) = crossbeam_channel::bounded::<sled::Batch>(100000);
+    let (tx_sled_writer, rx) = crossbeam_channel::bounded::<sled::Batch>(WRITE_BATCH_BUFFER_SIZE);
 
     for i in 0..WRITE_BATCH_N_THREADS {
         let sled_write_tree = store_sled.store.clone();
@@ -127,6 +130,24 @@ async fn main() -> anyhow::Result<()> {
     }
 
 
+    // read
+    for i in 0..READ_N_THREADS {
+        let sled_read_tree = store_sled.store.clone();
+        spawn(move || {
+            loop {
+                let results = sled_read_tree.scan_prefix(&[i as u8]).map(|r| r.unwrap()).collect_vec();
+                for (k, v) in results.iter().take(3) {
+                    let key = Pubkey::new_from_array(k[0..PUBKEY_BYTES].try_into().unwrap());
+                    // let value: AccountStuff = bincode::deserialize(&v).unwrap();
+                    info!("read {:?}, total={}", key, results.len());
+                }
+
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        });
+    }
+
+
     let before = ALLOCATOR.allocated();
     for snapshot_result in loader.iter() {
         if let Ok(append_vec) = snapshot_result {
@@ -140,8 +161,8 @@ async fn main() -> anyhow::Result<()> {
                 for handle in chunk {
                     cnt_append_vecs += 1;
                     if cnt_append_vecs % 100_000 == 0 {
-                        info!("{} append vecs after {:.3}s (speed {:.0}/s)",
-                            cnt_append_vecs, started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
+                        info!("{} append vecs and {} in store after {:.3}s (speed {:.0}/s)",
+                            cnt_append_vecs, store_sled.store.len(), started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                     }
                     let stored = handle.access().unwrap();
                     let account_pubkey = stored.meta.pubkey;
@@ -179,9 +200,14 @@ async fn main() -> anyhow::Result<()> {
                 //
                 let mut write_batch = sled::Batch::default();
                 for (key, value) in batch {
-                    write_batch.insert(&key, value);
+                    write_batch.insert(key.as_slice(), value);
                 }
-                tx_sled_writer.send(write_batch).unwrap()
+                tx_sled_writer.send(write_batch).unwrap();
+
+                let n_buffered = tx_sled_writer.len();
+                if n_buffered > 1000 {
+                    warn!("{} batches buffered", n_buffered);
+                }
 
                 // spawn(move || {
                 //     store_sled.store.append_batch(write_batch).unwrap();
@@ -426,22 +452,21 @@ impl ProgramPrefixBtree {
     }
 }
 
-#[from_env]
-const LEAF_FANOUT: usize = 32;
 struct SpaceJamMap {
-    db: sled::Db<LEAF_FANOUT>,
-    store: Tree<LEAF_FANOUT>,
+    db: sled::Db,
+    store: Tree,
 }
 
 impl SpaceJamMap {
     fn new() -> Self {
         let config = sled::Config::default()
             .path("sled.db")
-            // .mode(sled::Mode::HighThroughput)
+            .mode(sled::Mode::HighThroughput)
             // compression features disabled cos of dependency mess
             // .use_compression(true)
             // .compression_factor(3)
-            .cache_capacity_bytes(512 * 1024 * 1024)
+            .temporary(true)
+            .cache_capacity(512 * 1024 * 1024)
             .flush_every_ms(Some(5000))
             ;
         let db = config.open().unwrap();
