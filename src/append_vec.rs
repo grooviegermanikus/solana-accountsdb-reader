@@ -174,7 +174,7 @@ impl AppendVec {
     /// doesn't overrun the internal buffer. Otherwise return None.
     /// Also return the offset of the first byte after the requested data that
     /// falls on a 64-byte boundary.
-    fn get_slice(&self, offset: usize, size: usize) -> Option<(&[u8], usize)> {
+    pub fn get_slice(&self, offset: usize, size: usize) -> Option<(&[u8], usize)> {
         let (next, overflow) = offset.overflowing_add(size);
         if overflow || next > self.len() {
             return None;
