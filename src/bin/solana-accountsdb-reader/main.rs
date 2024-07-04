@@ -74,7 +74,8 @@ const READ_N_THREADS: usize = 0;
 
 // CLone is required by the ConcurrentMap -- TODO check why
 #[derive(Clone, Serialize)]
-struct  AccountStuff {
+struct AccountStuff {
+    // TODO
 }
 
 #[tokio::main]
@@ -112,28 +113,27 @@ async fn main() -> anyhow::Result<()> {
     let (tx_sled_writer, rx) = crossbeam_channel::bounded::<Box<[(Pubkey, Vec<u8>)]>>(WRITE_BATCH_BUFFER_SIZE);
 
     for i in 0..WRITE_BATCH_N_THREADS {
-        // let sled_write_tree = store_sled.binned_stores.clone();
+        let sled_write_tree = store_sled.binned_stores.clone();
         let rx = rx.clone();
         spawn(move || {
             loop {
                 match rx.recv() {
-                    Ok(batch) => {
-                        // info!("received batch of {} items in thread {:?}", batch.len(), std::thread::current().id());
-                        // for (bin, group) in &batch.iter().group_by(|(account_key, _)| {
-                        //     let bin = bin_from_pubkey(&account_key);
-                        //     bin
-                        // }) {
-                        //     let mut batch = sled::Batch::default();
-                        //     for (account_key, value) in group {
-                        //         // info!("writing {:?} to bin {}", account_key, bin);
-                        //         batch.insert(&account_key.to_bytes(), value.as_slice());
-                        //     }
-                        //     // sled_write_tree[bin].insert(account_key.to_bytes(), value.as_slice()).unwrap();
-                        //     sled_write_tree[bin].apply_batch(batch).unwrap();
-                        // }
-                        //
-                        // // sled_write_tree.apply_batch(batch).unwrap();
-                        // trace!("wrote batch in thread {:?}", std::thread::current().id());
+                    Ok(chunk) => {
+                        for (bin, group) in &chunk.iter().group_by(|(account_key, _)| {
+                            let bin = bin_from_pubkey(&account_key);
+                            bin
+                        }) {
+                            let mut batch = sled::Batch::default();
+                            for (account_key, value) in group {
+                                // info!("writing {:?} to bin {}", account_key, bin);
+                                batch.insert(&account_key.to_bytes(), value.as_slice());
+                            }
+                            // sled_write_tree[bin].insert(account_key.to_bytes(), value.as_slice()).unwrap();
+                            sled_write_tree[bin].apply_batch(batch).unwrap();
+                        }
+
+                        // sled_write_tree.apply_batch(batch).unwrap();
+                        trace!("wrote batch in thread {:?}", std::thread::current().id());
                     }
                     Err(_) => {
                         warn!("channel closed");
@@ -175,8 +175,8 @@ async fn main() -> anyhow::Result<()> {
                 let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
                 for handle in chunk {
                     cnt_append_vecs += 1;
-                    if cnt_append_vecs % 100 == 0 {
-                        info!("{} store and {} in store after {:.3}s (speed {:.0}/s)",
+                    if cnt_append_vecs % 100_000 == 0 {
+                        info!("{} append vecs and {} in store after {:.3}s (speed {:.0}/s)",
                             cnt_append_vecs, store_sled.store.len(), started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                     }
                     let stored = handle.access().unwrap();
@@ -192,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
 
                     // TODO do not clone
                     // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
-                    batch.push((account_pubkey, bincode::serialize(&stored.data).unwrap()));
+                    batch.push((account_pubkey, bincode::serialize(&stuff).unwrap()));
 
                     // let before_trie = ALLOCATOR.allocated();
                     // trie.insert(account_pubkey.to_bytes(), "");
@@ -253,6 +253,9 @@ async fn main() -> anyhow::Result<()> {
             // }
         }
     }
+
+    // this should drop the trees helt by writer threads
+    drop(tx_sled_writer);
 
     let after = ALLOCATOR.allocated();
 
@@ -466,11 +469,12 @@ impl ProgramPrefixBtree {
 }
 
 
-// 11 -> 8k bins
-const BIN_SHIFT_BITS: usize = 3;
+// 13 -> 8k bins
+const BIN_SIZE_LOG2: usize = 5;
 
 #[inline]
 fn bin_from_pubkey(pubkey: &Pubkey) -> usize {
+    const BIN_SHIFT_BITS: usize = 24 - BIN_SIZE_LOG2;
     let as_ref = pubkey.as_ref();
     ((as_ref[0] as usize) << 16 | (as_ref[1] as usize) << 8 | (as_ref[2] as usize))
         >> BIN_SHIFT_BITS
@@ -491,27 +495,29 @@ struct SpaceJamMap {
     db: sled::Db,
     // legacy
     store: Tree,
-    // binned_stores: Arc<[Tree]>,
+    binned_stores: Arc<[Tree]>,
 }
 
 impl SpaceJamMap {
     fn new() -> Self {
         let config = sled::Config::default()
-            .path("sled.db")
+            .path("/tmp/sled.db")
             .mode(sled::Mode::HighThroughput)
             .cache_capacity(512 * 1024 * 1024)
             .flush_every_ms(Some(5000))
             ;
         let db = config.open().unwrap();
 
-        // let binned_trees: Arc<[Tree]> = (0..(1 << (24 - BIN_SHIFT_BITS))).map(|bin| {
-        //     db.open_tree(format!("accounts-{}", bin)).unwrap()
-        // }).collect();
+        let binned_trees: Arc<[Tree]> = (0..(1 << BIN_SIZE_LOG2)).map(|bin| {
+            db.open_tree(format!("accounts-{}", bin)).unwrap()
+        }).collect();
         let legacy_accounts_tree = db.open_tree("accounts").unwrap();
+
+        info!("sled initialized with {} bins", binned_trees.len());
         Self {
             db,
             store: legacy_accounts_tree,
-            // binned_stores: binned_trees,
+            binned_stores: binned_trees,
         }
     }
 
@@ -522,7 +528,7 @@ impl SpaceJamMap {
 
     fn debug(&self) {
         info!("SledMap, count: {}", self.store.len());
-        let somekey = Pubkey::from_str("97Jd7kcwULGAdqsWTsdYQrqt6gQdYeowR767iTS4JFpD").unwrap();
+        let somekey = Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap();
         let left = self.store.get_lt(&somekey).unwrap()
             .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
         let right = self.store.get_gt(&somekey).unwrap()
