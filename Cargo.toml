@@ -45,7 +45,8 @@ ahash = "0.8.11"
 bloomfilter = "1.0.14"
 tikv-jemallocator = "0.5.4"
 rio = "0.9.4"
-nohash = "0.2.0"
+libc = "0.2.155"
+nohash-hasher = "0.2.0"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"

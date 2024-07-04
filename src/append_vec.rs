@@ -208,8 +208,8 @@ impl AppendVec {
         let (meta, next): (&'a StoredMeta, _) = self.get_type(offset)?;
         let (account_meta, next): (&'a AccountMeta, _) = self.get_type(next)?;
         let (hash, next): (&'a Hash, _) = self.get_type(next)?;
-        let (data, next) = self.get_slice(next, meta.data_len as usize)?;
-        let stored_size = next - offset;
+        let (data, next_aligned) = self.get_slice(next, meta.data_len as usize)?;
+        let stored_size = next + meta.data_len as usize - offset;
         Some((
             StoredAccountMeta {
                 meta,
@@ -219,7 +219,7 @@ impl AppendVec {
                 stored_size,
                 hash,
             },
-            next,
+            next_aligned,
         ))
     }
 
