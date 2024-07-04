@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::Hasher;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::mpsc::channel;
+use std::thread::spawn;
 use ahash::HashMapExt;
 use std::time::Instant;
 use bloomfilter::Bloom;
@@ -60,6 +62,9 @@ struct Args {
 #[from_env]
 const WRITE_BATCH_SIZE: usize = 65536;
 
+#[from_env]
+const WRITE_BATCH_N_THREADS: usize = 4;
+
 //
 //
 //
@@ -99,6 +104,27 @@ async fn main() -> anyhow::Result<()> {
 
     // let mut trie = Trie::new();
     let mut bloom = Bloom::new_for_fp_rate(1_000_000_000, 0.001);
+
+    let (tx_sled_writer, rx) = crossbeam_channel::bounded::<sled::Batch>(100000);
+
+    for i in 0..WRITE_BATCH_N_THREADS {
+        let sled_write_tree = store_sled.store.clone();
+        let rx = rx.clone();
+        spawn(move || {
+            loop {
+                match rx.recv() {
+                    Ok(batch) => {
+                        sled_write_tree.apply_batch(batch).unwrap();
+                        trace!("wrote batch in thread {:?}", std::thread::current().id());
+                    }
+                    Err(_) => {
+                        warn!("channel closed");
+                        break;
+                    }
+                }
+            }
+        });
+    }
 
 
     let before = ALLOCATOR.allocated();
@@ -155,8 +181,12 @@ async fn main() -> anyhow::Result<()> {
                 for (key, value) in batch {
                     write_batch.insert(&key, value);
                 }
+                tx_sled_writer.send(write_batch).unwrap()
 
-                store_sled.store.apply_batch(write_batch).unwrap();
+                // spawn(move || {
+                //     store_sled.store.append_batch(write_batch).unwrap();
+                // });
+                // store_sled.store.apply_batch(write_batch).unwrap();
 
             }
 
