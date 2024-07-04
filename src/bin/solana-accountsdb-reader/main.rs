@@ -57,7 +57,7 @@ struct Args {
 
 
 #[from_env]
-const WRITE_BATCH_SIZE: usize = 64 * 1024;
+const WRITE_BATCH_SIZE: usize = 65536;
 
 #[from_env]
 const WRITE_BATCH_BUFFER_SIZE: usize = 16;
