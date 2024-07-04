@@ -88,7 +88,9 @@ async fn main() -> anyhow::Result<()> {
     let Args { snapshot_archive_path } = Args::parse();
 
     info!("WRITE_BATCH_SIZE: {}", WRITE_BATCH_SIZE);
-    // info!("WRITE_BATCH_SORTED: {}", WRITE_BATCH_SORTED);
+    info!("WRITE_BATCH_BUFFER_SIZE: {}", WRITE_BATCH_BUFFER_SIZE);
+    info!("WRITE_BATCH_N_THREADS: {}", WRITE_BATCH_N_THREADS);
+    info!("READ_N_THREADS: {}", READ_N_THREADS);
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
