@@ -54,10 +54,11 @@ struct Args {
 }
 
 
+//useless
+// #[from_env]
+// const WRITE_BATCH_SORTED: bool = false;
 #[from_env]
-const WRITE_BATCH_SORTED: bool = false;
-#[from_env]
-const WRITE_BATCH_SIZE: usize = 128;
+const WRITE_BATCH_SIZE: usize = 65536;
 
 //
 //
@@ -79,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     let Args { snapshot_archive_path } = Args::parse();
 
     info!("WRITE_BATCH_SIZE: {}", WRITE_BATCH_SIZE);
-    info!("WRITE_BATCH_SORTED: {}", WRITE_BATCH_SORTED);
+    // info!("WRITE_BATCH_SORTED: {}", WRITE_BATCH_SORTED);
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
@@ -109,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
             for chunk in &append_vec_iter(&append_vec).chunks(WRITE_BATCH_SIZE) {
 
                 // 60-128 items
-                // let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+                let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
                 for handle in chunk {
                     cnt_append_vecs += 1;
                     if cnt_append_vecs % 100_000 == 0 {
@@ -120,15 +121,15 @@ async fn main() -> anyhow::Result<()> {
                     let account_pubkey = stored.meta.pubkey;
                     let owner_pubkey = stored.account_meta.owner;
 
-                    // let stuff = AccountStuff {
-                    // };
-                    //
-                    // let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
-                    // key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
-                    // key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
-                    //
-                    // // TODO do not clone
-                    // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
+                    let stuff = AccountStuff {
+                    };
+
+                    let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
+                    key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
+                    key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
+
+                    // TODO do not clone
+                    batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
 
                     // let before_trie = ALLOCATOR.allocated();
                     // trie.insert(account_pubkey.to_bytes(), "");
@@ -140,7 +141,7 @@ async fn main() -> anyhow::Result<()> {
                     // store_hashmapmap.store(owner_pubkey, account_pubkey, stuff);
 
 
-                    bloom.set(&account_pubkey);
+                    // bloom.set(&account_pubkey);
 
 
                 }
@@ -150,12 +151,12 @@ async fn main() -> anyhow::Result<()> {
                 //     trace!("sort batch of {} items", batch.len());
                 // }
                 //
-                // let mut write_batch = sled::Batch::default();
-                // for (key, value) in batch {
-                //     write_batch.insert(&key, value);
-                // }
-                //
-                // store_sled.store.apply_batch(write_batch).unwrap();
+                let mut write_batch = sled::Batch::default();
+                for (key, value) in batch {
+                    write_batch.insert(&key, value);
+                }
+
+                store_sled.store.apply_batch(write_batch).unwrap();
 
             }
 
@@ -411,7 +412,7 @@ impl SpaceJamMap {
             // .use_compression(true)
             // .compression_factor(3)
             .cache_capacity_bytes(512 * 1024 * 1024)
-            .flush_every_ms(Some(1000))
+            .flush_every_ms(Some(usize::MAX))
             ;
         let db = config.open().unwrap();
         let accounts_tree = db.open_tree("accounts").unwrap();
