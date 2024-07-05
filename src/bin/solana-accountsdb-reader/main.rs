@@ -164,16 +164,14 @@ async fn main() -> anyhow::Result<()> {
 
 
     let before = ALLOCATOR.allocated();
+    let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
     for snapshot_result in loader.iter() {
         if let Ok(append_vec) = snapshot_result {
             trace!("size: {:?}", append_vec.len());
             trace!("slot: {:?}", append_vec.slot());
 
-            for chunk in &append_vec_iter(&append_vec).chunks(WRITE_BATCH_SIZE) {
-
-                // 60-128 items
-                let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
-                for handle in chunk {
+            for handle in append_vec_iter(&append_vec) {
+                {
                     cnt_append_vecs += 1;
                     if cnt_append_vecs % 100_000 == 0 {
                         info!("{} append vecs and {} in store after {:.3}s (speed {:.0}/s)",
@@ -190,9 +188,22 @@ async fn main() -> anyhow::Result<()> {
                     // key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
                     // key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
 
+
+                    if batch.len() == WRITE_BATCH_SIZE {
+                        info!("flush batch");
+                        tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
+
+                        let n_buffered = tx_sled_writer.len();
+                        if n_buffered > WRITE_BATCH_BUFFER_SIZE / 2 {
+                            warn!("{} batches buffered", n_buffered);
+                        }
+                        batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+                    }
+
                     // TODO do not clone
                     // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
-                    batch.push((account_pubkey, bincode::serialize(&stuff).unwrap()));
+                    batch.push((account_pubkey, bincode::serialize(&stored.data).unwrap()));
+
 
                     // let before_trie = ALLOCATOR.allocated();
                     // trie.insert(account_pubkey.to_bytes(), "");
@@ -215,12 +226,7 @@ async fn main() -> anyhow::Result<()> {
                 // }
                 //
 
-                tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
 
-                let n_buffered = tx_sled_writer.len();
-                if n_buffered > WRITE_BATCH_BUFFER_SIZE / 2 {
-                    warn!("{} batches buffered", n_buffered);
-                }
 
                 // spawn(move || {
                 //     store_sled.store.append_batch(write_batch).unwrap();
@@ -228,6 +234,8 @@ async fn main() -> anyhow::Result<()> {
                 // store_sled.store.apply_batch(write_batch).unwrap();
 
             }
+
+
 
             // for handle in append_vec_iter(&append_vec) {
             //     cnt_append_vecs += 1;
@@ -252,7 +260,16 @@ async fn main() -> anyhow::Result<()> {
             //
             // }
         }
+    } // -- END outer loop
+
+    // final flush
+    if !batch.is_empty() {
+        info!("final flush batch");
+        tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
+
+        batch = Vec::with_capacity(WRITE_BATCH_SIZE);
     }
+
 
     // this should drop the trees helt by writer threads
     drop(tx_sled_writer);
@@ -470,7 +487,7 @@ impl ProgramPrefixBtree {
 
 
 // 13 -> 8k bins
-const BIN_SIZE_LOG2: usize = 5;
+const BIN_SIZE_LOG2: usize = 3;
 
 #[inline]
 fn bin_from_pubkey(pubkey: &Pubkey) -> usize {
