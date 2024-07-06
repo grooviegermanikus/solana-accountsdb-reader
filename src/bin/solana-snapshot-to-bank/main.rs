@@ -40,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
     //     genesis_config = create_genesis_config(sol_to_lamports(1_000_000.)).genesis_config;
     let accounts_dir = PathBuf::from_str("/Users/stefan/mango/projects/accountsdb-how-it-works/accountsdb-mini").unwrap();
     // must esist
-    let bank_snapshots_dir = PathBuf::from_str("snapshots-unpack").unwrap();
+    let bank_snapshots_dir = PathBuf::from_str("/Users/stefan/mango/projects/accountsdb-how-it-works/snapshot-unpack").unwrap();
 
     let full_snapshot_archive_info = FullSnapshotArchiveInfo::new_from_path(archive_path).unwrap();
     let (bank_from_snapshot, _) = bank_from_snapshot_archives(
@@ -67,18 +67,20 @@ async fn main() -> anyhow::Result<()> {
 
     let program_key = Pubkey::from_str("89A6cnoZMhsxKQzgJvQZS8UsTnojef5YW4z23Do1GuXv").unwrap();
     // let accounts = bank_from_snapshot.get_program_accounts(&program_key, &ScanConfig::default()).expect("should find program");
-    let accccc = bank_from_snapshot.accounts();
-    let accounts_db = accccc.accounts_db.clone();
-    let all_tokens = bank_from_snapshot.get_program_accounts(&Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(), &ScanConfig::default()).unwrap();
-    for acc in all_tokens {
-        println!("{:?}", acc);
-
-    }
+    // let accccc = bank_from_snapshot.accounts();
+    // let accounts_db = accccc.accounts_db.clone();
+    // let all_tokens = bank_from_snapshot.get_program_accounts(&Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(), &ScanConfig::default()).unwrap();
+    // for acc in all_tokens {
+    //     println!("{:?}", acc);
+    //
+    // }
 
     tokio::spawn(async move {
         loop {
-            info!("base working path: {:?}", accounts_db.get_base_working_path());
-            accounts_db.get_base_working_path();
+            let n_accounts = bank_from_snapshot.get_all_accounts().unwrap().len();
+            info!("n_accounts: {}", n_accounts);
+            // info!("base working path: {:?}", accounts_db.get_base_working_path());
+            // accounts_db.scan_accounts();
             sleep(std::time::Duration::from_millis(500));
         }
     });

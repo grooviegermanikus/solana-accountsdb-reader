@@ -107,6 +107,9 @@ async fn main() -> anyhow::Result<()> {
     // let mut store_btree = ProgramPrefixBtree::new();
     let mut store_sled = SpaceJamMap::new();
 
+    let mut program_account_size_map: HashMap<Pubkey, u64> = HashMap::with_capacity(10000);
+    let mut flushes_per_program_account: HashMap<Pubkey, u64> = HashMap::with_capacity(10000);
+
     // let mut trie = Trie::new();
     let mut bloom = Bloom::new_for_fp_rate(1_000_000_000, 0.001);
 
@@ -164,7 +167,9 @@ async fn main() -> anyhow::Result<()> {
 
 
     let before = ALLOCATOR.allocated();
-    let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+    // let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+    const BUFFER_SIZE: u64 = 8 * 1024 * 1024;
+
     for snapshot_result in loader.iter() {
         if let Ok(append_vec) = snapshot_result {
             trace!("size: {:?}", append_vec.len());
@@ -178,31 +183,75 @@ async fn main() -> anyhow::Result<()> {
                             cnt_append_vecs, store_sled.store.len(), started_at.elapsed().as_secs_f64(), cnt_append_vecs as f64 / started_at.elapsed().as_secs_f64());
                     }
                     let stored = handle.access().unwrap();
+
                     let account_pubkey = stored.meta.pubkey;
                     let owner_pubkey = stored.account_meta.owner;
+                    let account_size = stored.meta.data_len + 50; // approximation
+
+
+                    // let uncompressed = stored.data.len();
+                    // if (uncompressed > 100) {
+                    //     let compressed = lz4_flex::block::compress(&stored.data).len();
+                    //
+                    //     info!("compress {}->{}: {:02}%", uncompressed, compressed, 100*compressed/uncompressed);
+                    // }
+
+
+                    program_account_size_map.entry(owner_pubkey)
+                        .and_modify(|v| *v += account_size)
+                        .or_insert(account_size);
 
                     let stuff = AccountStuff {
                     };
+
+
+
+                    if cnt_append_vecs % 10_000 == 0 {
+                        let flush_vec = program_account_size_map.iter().filter(|(_, &size)| size > BUFFER_SIZE)
+                            .map(|(k,v)|k)
+                            .cloned()
+                            .collect_vec();
+                        for pk in flush_vec {
+                            let pk = pk.clone();
+                            flushes_per_program_account.entry(pk)
+                                .and_modify(|v| *v += 1)
+                                .or_default();
+
+                            program_account_size_map.remove(&pk);
+                        }
+
+                    }
+
+                    if cnt_append_vecs % 500_000 == 0 {
+                        let non_empty_buffers = program_account_size_map.len();
+                        let topn = program_account_size_map.iter().sorted_by_key(|(_,&v)| v).rev().take(10).collect_vec();
+                        for (owner, size) in topn {
+                            let flushed_n = flushes_per_program_account.get(&owner).cloned().unwrap_or_default();
+
+                            info!("- {:11}, {} flushes, program {}, nonempty={}", size, flushed_n, owner.to_string(), non_empty_buffers);
+
+                        }
+                    }
 
                     // let mut key_bytes = [0u8; PUBKEY_BYTES * 2];
                     // key_bytes[0..PUBKEY_BYTES].copy_from_slice(owner_pubkey.as_ref());
                     // key_bytes[PUBKEY_BYTES..].copy_from_slice(account_pubkey.as_ref());
 
 
-                    if batch.len() == WRITE_BATCH_SIZE {
-                        info!("flush batch");
-                        tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
-
-                        let n_buffered = tx_sled_writer.len();
-                        if n_buffered > WRITE_BATCH_BUFFER_SIZE / 2 {
-                            warn!("{} batches buffered", n_buffered);
-                        }
-                        batch = Vec::with_capacity(WRITE_BATCH_SIZE);
-                    }
-
-                    // TODO do not clone
-                    // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
-                    batch.push((account_pubkey, bincode::serialize(&stored.data).unwrap()));
+                    // if batch.len() == WRITE_BATCH_SIZE {
+                    //     info!("flush batch");
+                    //     tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
+                    //
+                    //     let n_buffered = tx_sled_writer.len();
+                    //     if n_buffered > WRITE_BATCH_BUFFER_SIZE / 2 {
+                    //         warn!("{} batches buffered", n_buffered);
+                    //     }
+                    //     batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+                    // }
+                    //
+                    // // TODO do not clone
+                    // // batch.push((key_bytes.clone(), bincode::serialize(&stuff).unwrap()));
+                    // batch.push((account_pubkey, bincode::serialize(&stored.data).unwrap()));
 
 
                     // let before_trie = ALLOCATOR.allocated();
@@ -263,12 +312,12 @@ async fn main() -> anyhow::Result<()> {
     } // -- END outer loop
 
     // final flush
-    if !batch.is_empty() {
-        info!("final flush batch");
-        tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
-
-        batch = Vec::with_capacity(WRITE_BATCH_SIZE);
-    }
+    // if !batch.is_empty() {
+    //     info!("final flush batch");
+    //     tx_sled_writer.send(batch.into_boxed_slice()).unwrap();
+    //
+    //     batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+    // }
 
 
     // this should drop the trees helt by writer threads
@@ -546,11 +595,11 @@ impl SpaceJamMap {
     fn debug(&self) {
         info!("SledMap, count: {}", self.store.len());
         let somekey = Pubkey::from_str("4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg").unwrap();
-        let left = self.store.get_lt(&somekey).unwrap()
-            .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
-        let right = self.store.get_gt(&somekey).unwrap()
-            .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
-        info!("left: {:?}, right: {:?}", left.to_string(), right.to_string());
+        // let left = self.store.get_lt(&somekey).unwrap()
+        //     .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
+        // let right = self.store.get_gt(&somekey).unwrap()
+        //     .map(|r| Pubkey::new_from_array(r.0[0..PUBKEY_BYTES].try_into().unwrap())).unwrap();
+        // info!("left: {:?}, right: {:?}", left.to_string(), right.to_string());
 
         info!("db size: {}", self.db.size_on_disk().unwrap());
 
