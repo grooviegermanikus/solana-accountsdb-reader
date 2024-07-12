@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::thread::sleep;
 use std::time::Instant;
 use log::warn;
 use {
@@ -21,7 +22,12 @@ use {
     },
 };
 use clap::Parser;
+use hash256_std_hasher::Hash256StdHasher;
+use hash_db::{AsHashDB, EMPTY_PREFIX, HashDB, Prefix};
+use keccak_hasher::KeccakHasher;
+use memory_db::{HashKey, MemoryDB};
 use qp_trie::Trie;
+use solana_sdk::hash::ParseHashError;
 
 
 #[derive(Parser, Debug)]
@@ -45,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut trie: Trie<[u8; 32], i32> = Trie::new();
 
+
     let started_at = Instant::now();
     for vec in loader.iter() {
         let append_vec =  vec.unwrap();
@@ -61,13 +68,13 @@ async fn main() -> anyhow::Result<()> {
         started_at.elapsed().as_millis(),
         trie.count());
 
+
     let started_at = Instant::now();
     let prefix = [42, 12];
     for pk in trie.iter_prefix(&prefix[..]) {
         info!("- {:?}", pk);
     }
     info!("iterated over trie in {:.1}ms", started_at.elapsed().as_millis());
-
 
     Ok(())
 }
