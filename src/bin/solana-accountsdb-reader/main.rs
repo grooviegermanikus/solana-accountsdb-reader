@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::thread::sleep;
 use std::time::Instant;
-use log::warn;
 use {
     log::info,
     reqwest::blocking::Response,
@@ -10,13 +8,12 @@ use {
         append_vec::AppendVec,
         append_vec_iter,
         archived::ArchiveSnapshotExtractor,
-        parallel::{par_iter_append_vecs, AppendVecConsumer},
+        parallel::{AppendVecConsumer},
         unpacked::UnpackedSnapshotExtractor,
-        AppendVecIterator, ReadProgressTracking, SnapshotError, SnapshotExtractor, SnapshotResult,
+        AppendVecIterator, ReadProgressTracking, SnapshotExtractor,
     },
     std::{
         fs::File,
-        io::{IoSliceMut, Read},
         path::Path,
         sync::Arc,
     },
@@ -24,6 +21,7 @@ use {
 use clap::Parser;
 use qp_trie::Trie;
 use solana_sdk::hash::ParseHashError;
+use solana_sdk::pubkey::Pubkey;
 
 
 #[derive(Parser, Debug)]
@@ -45,9 +43,11 @@ async fn main() -> anyhow::Result<()> {
 
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
-    let mut trie: Trie<[u8; 32], i32> = Trie::new();
+    let mut trie: Trie<[u8; 32], ()> = Trie::new();
 
+    let program_filter = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
 
+    info!("Reading the snapshot...");
     let started_at = Instant::now();
     for vec in loader.iter() {
         let append_vec =  vec.unwrap();
@@ -55,22 +55,46 @@ async fn main() -> anyhow::Result<()> {
         for handle in append_vec_iter(&append_vec) {
             let stored = handle.access().unwrap();
             let account_key = stored.meta.pubkey;
-            // info!("account {:?}: {}", account_key, stored.account_meta.lamports);
-            trie.insert(account_key.to_bytes(), 42);
+            let program_key = stored.account_meta.owner;
+            if program_key != program_filter {
+                continue;
+            }
+            trie.insert(account_key.to_bytes(), ());
         }
     }
 
+    let elapsed = started_at.elapsed();
     info!("built trie size in {:.1}ms with {:?} entries",
-        started_at.elapsed().as_millis(),
+        elapsed.as_millis(),
         trie.count());
+    info!("rate {:.1} entries/sec",
+        trie.count() as f64 / elapsed.as_millis() as f64 * 1000.0);
 
 
     let started_at = Instant::now();
     let prefix = [42, 12];
-    for pk in trie.iter_prefix(&prefix[..]) {
+    let mut count = 0;
+    for _pk in trie.iter_prefix(&prefix[..]) {
+        // info!("- {:?}", pk);
+        count += 1;
+    }
+    info!("iterated over trie with {} items in {:.1}ms", count, started_at.elapsed().as_millis());
+
+    let blob = bincode::serialize(&trie).unwrap();
+    info!("serialized trie to {} bytes ({:.1}bytes/item)", blob.len(), blob.len() as f64 / trie.count() as f64);
+
+    let started_at = Instant::now();
+    let deser = bincode::deserialize::<Trie<[u8; 32], ()>>(&blob).unwrap();
+    let elapsed = started_at.elapsed();
+    info!("deserialized trie in {:.1}ms with {:?} entries",
+        elapsed.as_millis(),
+        deser.count());
+
+
+    for pk in deser.iter_prefix(&prefix[..]).take(5) {
         info!("- {:?}", pk);
     }
-    info!("iterated over trie in {:.1}ms", started_at.elapsed().as_millis());
+
 
     Ok(())
 }
