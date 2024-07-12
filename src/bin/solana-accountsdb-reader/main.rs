@@ -24,6 +24,11 @@ use indexmap::IndexMap;
 use qp_trie::Trie;
 use solana_sdk::hash::ParseHashError;
 use solana_sdk::pubkey::Pubkey;
+use std::collections::HashMap;
+use std::fs;
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
+use solana_accountsdb_reader::parallel_io::pwrite_all;
 
 #[global_allocator]
 pub static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
@@ -113,6 +118,25 @@ async fn main() -> anyhow::Result<()> {
     // for pk in deser.iter_prefix(&prefix[..]).take(5) {
     //     info!("- {:?}", pk);
     // }
+
+
+    let FILE = "storage/indexmap.bin";
+    let file = OpenOptions::new().write(true)
+        .create(true)
+        .truncate(true)
+        .open(FILE)
+        .unwrap();
+
+
+
+    let started_at = Instant::now();
+    let serialized = serde_pickle::to_vec(&index_map, Default::default()).unwrap();
+    pwrite_all(&file, &serialized, 0).unwrap();
+
+    let file_size = fs::metadata(FILE).unwrap().len();
+    info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
+        file_size, file_size as f64 / index_map.len() as f64,
+        started_at.elapsed().as_millis());
 
 
     Ok(())

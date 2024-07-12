@@ -35,7 +35,9 @@ clap = { version = "4.5.4", features = ["derive"] }
 cap = "0.1.2"
 qp-trie = { version = "0.8.2" , features = ["serde"]}
 fnv = "1.0.7"
-indexmap = { version = "2.2.6", features = ["rayon"] }
+
+indexmap = { version = "2.2.6", features = ["rayon", "serde"] }
+serde-pickle = "1.1.1"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"

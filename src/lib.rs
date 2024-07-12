@@ -15,6 +15,7 @@ pub mod archived;
 pub mod parallel;
 pub mod solana;
 pub mod unpacked;
+pub mod parallel_io;
 
 const SNAPSHOTS_DIR: &str = "snapshots";
 
