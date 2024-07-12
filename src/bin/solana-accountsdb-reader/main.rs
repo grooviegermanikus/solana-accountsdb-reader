@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
             let stored = handle.access().unwrap();
             let account_key = stored.meta.pubkey;
             // info!("account {:?}: {}", account_key, stored.account_meta.lamports);
-            // trie.insert(account_key.to_bytes(), 42);
+            trie.insert(account_key.to_bytes(), 42);
         }
     }
 
