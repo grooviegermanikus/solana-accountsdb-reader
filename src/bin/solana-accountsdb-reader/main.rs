@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
+use cap::Cap;
 use {
     log::info,
     reqwest::blocking::Response,
@@ -19,10 +20,13 @@ use {
     },
 };
 use clap::Parser;
+use indexmap::IndexMap;
 use qp_trie::Trie;
 use solana_sdk::hash::ParseHashError;
 use solana_sdk::pubkey::Pubkey;
 
+#[global_allocator]
+pub static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -43,12 +47,16 @@ async fn main() -> anyhow::Result<()> {
 
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
+    let mut index_map = IndexMap::<[u8; 32], ()>::new();
     let mut trie: Trie<[u8; 32], ()> = Trie::new();
 
     let program_filter = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
 
     info!("Reading the snapshot...");
     let started_at = Instant::now();
+
+    let before = ALLOCATOR.allocated();
+
     for vec in loader.iter() {
         let append_vec =  vec.unwrap();
         // info!("size: {:?}", append_vec.len());
@@ -59,16 +67,27 @@ async fn main() -> anyhow::Result<()> {
             if program_key != program_filter {
                 continue;
             }
-            trie.insert(account_key.to_bytes(), ());
+            // trie.insert(account_key.to_bytes(), ());
+            index_map.insert(account_key.to_bytes(), ());
         }
     }
 
+    let after = ALLOCATOR.allocated();
     let elapsed = started_at.elapsed();
+
+    info!("allocated {} bytes", after - before);
+
     info!("built trie size in {:.1}ms with {:?} entries",
         elapsed.as_millis(),
         trie.count());
     info!("rate {:.1} entries/sec",
         trie.count() as f64 / elapsed.as_millis() as f64 * 1000.0);
+
+    info!("built indexmap size in {:.1}ms with {:?} entries",
+        elapsed.as_millis(),
+        index_map.len());
+    info!("rate {:.1} entries/sec",
+        index_map.len() as f64 / elapsed.as_millis() as f64 * 1000.0);
 
 
     let started_at = Instant::now();
@@ -80,20 +99,20 @@ async fn main() -> anyhow::Result<()> {
     }
     info!("iterated over trie with {} items in {:.1}ms", count, started_at.elapsed().as_millis());
 
-    let blob = bincode::serialize(&trie).unwrap();
-    info!("serialized trie to {} bytes ({:.1}bytes/item)", blob.len(), blob.len() as f64 / trie.count() as f64);
-
-    let started_at = Instant::now();
-    let deser = bincode::deserialize::<Trie<[u8; 32], ()>>(&blob).unwrap();
-    let elapsed = started_at.elapsed();
-    info!("deserialized trie in {:.1}ms with {:?} entries",
-        elapsed.as_millis(),
-        deser.count());
 
 
-    for pk in deser.iter_prefix(&prefix[..]).take(5) {
-        info!("- {:?}", pk);
-    }
+    // let blob = bincode::serialize(&trie).unwrap();
+    // info!("serialized trie to {} bytes ({:.1}bytes/item)", blob.len(), blob.len() as f64 / trie.count() as f64);
+
+    // let started_at = Instant::now();
+    // let deser = bincode::deserialize::<Trie<[u8; 32], ()>>(&blob).unwrap();
+    // let elapsed = started_at.elapsed();
+    // info!("deserialized trie in {:.1}ms with {:?} entries",
+    //     elapsed.as_millis(),
+    //     deser.count());
+    // for pk in deser.iter_prefix(&prefix[..]).take(5) {
+    //     info!("- {:?}", pk);
+    // }
 
 
     Ok(())
