@@ -22,10 +22,6 @@ use {
     },
 };
 use clap::Parser;
-use hash256_std_hasher::Hash256StdHasher;
-use hash_db::{AsHashDB, EMPTY_PREFIX, HashDB, Prefix};
-use keccak_hasher::KeccakHasher;
-use memory_db::{HashKey, MemoryDB};
 use qp_trie::Trie;
 use solana_sdk::hash::ParseHashError;
 

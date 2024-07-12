@@ -33,11 +33,6 @@ tokio = { version = "1.32.0", features = ["rt-multi-thread", "macros"]}
 zstd = "0.11.2"
 clap = { version = "4.5.4", features = ["derive"] }
 qp-trie = "0.8.2"
-trie-db = "0.29.1"
-memory-db = "0.32.0"
-hash-db = "0.16.0"
-keccak-hasher = "0.16.0"
-hash256-std-hasher = "0.15.2"
 fnv = "1.0.7"
 
 [lints.clippy]
