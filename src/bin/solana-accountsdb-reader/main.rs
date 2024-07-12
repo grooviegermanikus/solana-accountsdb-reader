@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Instant;
 use log::warn;
 use {
     log::info,
@@ -20,6 +21,7 @@ use {
     },
 };
 use clap::Parser;
+use qp_trie::Trie;
 
 
 #[derive(Parser, Debug)]
@@ -41,22 +43,31 @@ async fn main() -> anyhow::Result<()> {
 
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
-    // for vec in loader.iter() {
-    //     let append_vec =  vec.unwrap();
-    //     info!("size: {:?}", append_vec.len());
-    //     for handle in append_vec_iter(&append_vec) {
-    //         let stored = handle.access().unwrap();
-    //         info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-    //     }
-    // }
+    let mut trie: Trie<[u8; 32], i32> = Trie::new();
 
-    par_iter_append_vecs(
-        loader.iter(),
-        || SimpleLogConsumer {
-        },
-        4,
-    )
-        .await?;
+    let started_at = Instant::now();
+    for vec in loader.iter() {
+        let append_vec =  vec.unwrap();
+        // info!("size: {:?}", append_vec.len());
+        for handle in append_vec_iter(&append_vec) {
+            let stored = handle.access().unwrap();
+            let account_key = stored.meta.pubkey;
+            // info!("account {:?}: {}", account_key, stored.account_meta.lamports);
+            // trie.insert(account_key.to_bytes(), 42);
+        }
+    }
+
+    info!("built trie size in {:.1}ms with {:?} entries",
+        started_at.elapsed().as_millis(),
+        trie.count());
+
+    let started_at = Instant::now();
+    let prefix = [42, 12];
+    for pk in trie.iter_prefix(&prefix[..]) {
+        info!("- {:?}", pk);
+    }
+    info!("iterated over trie in {:.1}ms", started_at.elapsed().as_millis());
+
 
     Ok(())
 }
