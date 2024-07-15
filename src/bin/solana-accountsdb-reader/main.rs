@@ -150,54 +150,54 @@ async fn main() -> anyhow::Result<()> {
     // }
 
 
-    let FILE = "storage/indexmap.bin";
-    info!("Writing indexmap to {}", FILE);
-    let file = OpenOptions::new().write(true)
-        .create(true)
-        .truncate(true)
-        .open(FILE)
-        .unwrap();
+    {
+        info!("Ser-Deser with pickle ...");
+        let FILE = "storage/indexmap.bin";
+        info!("Writing indexmap to {}", FILE);
+        let file = OpenOptions::new().write(true)
+            .create(true)
+            .truncate(true)
+            .open(FILE)
+            .unwrap();
 
-    let mut writer = ParallelIoWriter {
-        file: &file,
-    };
+        let mut writer = ParallelIoWriter {
+            file: &file,
+        };
 
-    // let started_at = Instant::now();
-    // let mut buffer = BufWriter::with_capacity(16 * 1024 * 1024, writer);
-    // serde_pickle::to_writer(&mut buffer, &index_map, Default::default()).unwrap();
-    // buffer.flush().unwrap();
+        let started_at = Instant::now();
+        let mut buffer = BufWriter::with_capacity(16 * 1024 * 1024, writer);
+        serde_pickle::to_writer(&mut buffer, &index_map, Default::default()).unwrap();
+        buffer.flush().unwrap();
 
-    let bincode_bytes = bincode::serialize(&index_map).unwrap();
-    let file_size = bincode_bytes.len();
+        let started_at = Instant::now();
+        let read_file = OpenOptions::new().read(true)
+            .open(FILE)
+            .unwrap();
+        let mut read_buffer = BufReader::with_capacity(16 * 1024*1024, read_file);
 
-    // let file_size = fs::metadata(FILE).unwrap().len();
-    info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
-        file_size, file_size as f64 / index_map.len() as f64,
+
+        let read_index: serde_pickle::error::Result::<IndexMap::<[u8; 32], ()>> =
+            serde_pickle::from_reader(&mut read_buffer, Default::default());
+        let read_index = read_index.expect("failed to deserialize indexmap");
+        info!("deserialized indexmap in {:.1}ms with {:?} entries",
+            started_at.elapsed().as_millis(),
+            read_index.len());
+    }
+
+    {
+        info!("Ser-Deser with bincode ...");
+        let bincode_bytes = bincode::serialize(&index_map).unwrap();
+        let serialized_size = bincode_bytes.len();
+
+        info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
+        serialized_size, serialized_size as f64 / index_map.len() as f64,
         started_at.elapsed().as_millis());
 
-
-    let read_index: IndexMap::<[u8; 32], ()> = bincode::deserialize(&bincode_bytes).unwrap();
-    info!("deserialized indexmap in {:.1}ms with {:?} entries",
+        let read_index: IndexMap::<[u8; 32], ()> = bincode::deserialize(&bincode_bytes).unwrap();
+        info!("deserialized indexmap in {:.1}ms with {:?} entries",
         started_at.elapsed().as_millis(),
         read_index.len());
-
-    // let started_at = Instant::now();
-    // let read_file = OpenOptions::new().read(true)
-    //     .open(FILE)
-    //     .unwrap();
-    // let mut read_buffer = BufReader::with_capacity(16 * 1024*1024, read_file);
-    //
-    //
-    // let read_index: serde_pickle::error::Result::<IndexMap::<[u8; 32], ()>> =
-    //     serde_pickle::from_reader(&mut read_buffer, Default::default());
-    // let read_index = read_index.expect("failed to deserialize indexmap");
-    // info!("deserialized indexmap in {:.1}ms with {:?} entries",
-    //     started_at.elapsed().as_millis(),
-    //     read_index.len());
-
-
-
-
+    }
 
     Ok(())
 }
