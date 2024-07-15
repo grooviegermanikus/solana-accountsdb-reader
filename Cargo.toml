@@ -41,6 +41,8 @@ serde-pickle = "1.1.1"
 
 fst = "0.4.7"
 
+bincode2 = { package = "bincode", version = "2.0.0-rc.3", features = ["serde", "bincode_derive", "derive"] }
+
 [lints.clippy]
 clone_on_ref_ptr = "deny"
 missing_const_for_fn = "deny"

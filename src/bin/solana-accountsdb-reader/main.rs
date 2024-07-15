@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufWriter, Write};
+use bincode::{DefaultOptions, Options};
 use fst::{IntoStreamer, Set, SetBuilder, Streamer};
 use memmap2::MmapMut;
 use zstd::stream::zio::Writer;
@@ -186,14 +187,43 @@ async fn main() -> anyhow::Result<()> {
 
     {
         info!("Ser-Deser with bincode ...");
-        let bincode_bytes = bincode::serialize(&index_map).unwrap();
+        let bincode1 = DefaultOptions::new()
+            .with_big_endian()
+            .with_varint_encoding()
+            .allow_trailing_bytes();
+
+        let bincode_bytes = bincode1.serialize(&index_map).unwrap();
         let serialized_size = bincode_bytes.len();
 
         info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
         serialized_size, serialized_size as f64 / index_map.len() as f64,
         started_at.elapsed().as_millis());
 
-        let read_index: IndexMap::<[u8; 32], ()> = bincode::deserialize(&bincode_bytes).unwrap();
+        let read_index: IndexMap::<[u8; 32], ()> = bincode1.deserialize(&bincode_bytes).unwrap();
+        info!("deserialized indexmap in {:.1}ms with {:?} entries",
+        started_at.elapsed().as_millis(),
+        read_index.len());
+    }
+
+    {
+        info!("Ser-Deser with bincode2 ...");
+        let bincode_config = bincode2::config::standard()
+            // pick one of:
+            .with_big_endian()
+            // .with_little_endian()
+            // pick one of:
+            .with_variable_int_encoding()
+            // .with_fixed_int_encoding()
+            ;
+
+        let bincode_bytes = bincode2::serde::encode_to_vec(&index_map, bincode_config).unwrap();
+        let serialized_size = bincode_bytes.len();
+
+        info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
+        serialized_size, serialized_size as f64 / index_map.len() as f64,
+        started_at.elapsed().as_millis());
+
+        let (read_index, _size): (IndexMap::<[u8; 32], ()>, _) = bincode2::serde::decode_from_slice(&bincode_bytes, bincode_config).unwrap();
         info!("deserialized indexmap in {:.1}ms with {:?} entries",
         started_at.elapsed().as_millis(),
         read_index.len());
