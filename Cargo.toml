@@ -21,7 +21,7 @@ env_logger = "0.9.0"
 futures = "0.3.28"
 itertools = "0.10.3"
 log = "0.4.17"
-memmap2 = "0.5.5"
+memmap2 = "0.9.4"
 num_cpus = "1.16.0"
 reqwest = { version = "0.11.11", features = ["blocking"] }
 serde = { version = "1.0.139", features = ["derive"] }
@@ -38,6 +38,8 @@ fnv = "1.0.7"
 
 indexmap = { version = "2.2.6", features = ["rayon", "serde"] }
 serde-pickle = "1.1.1"
+
+fst = "0.4.7"
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"

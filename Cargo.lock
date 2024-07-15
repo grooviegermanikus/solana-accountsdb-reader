@@ -1273,6 +1273,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 
 [[package]]
+name = "fst"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ab85b9b05e3978cc9a9cf8fea7f01b494e1a09ed3037e16ba39edc7a29eb61a"
+
+[[package]]
 name = "futures"
 version = "0.3.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1930,6 +1936,15 @@ name = "memmap2"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "memmap2"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe751422e4a8caa417e13c3ea66452215d7d63e19e604f4980461212f3ae1322"
 dependencies = [
  "libc",
 ]
@@ -3105,7 +3120,7 @@ dependencies = [
  "lazy_static",
  "log",
  "lz4",
- "memmap2",
+ "memmap2 0.5.10",
  "modular-bitfield",
  "num-derive",
  "num-traits",
@@ -3154,11 +3169,12 @@ dependencies = [
  "clap",
  "env_logger",
  "fnv",
+ "fst",
  "futures",
  "indexmap 2.2.6",
  "itertools",
  "log",
- "memmap2",
+ "memmap2 0.9.4",
  "num_cpus",
  "qp-trie",
  "reqwest",
@@ -3225,7 +3241,7 @@ dependencies = [
  "bv",
  "bytemuck",
  "log",
- "memmap2",
+ "memmap2 0.5.10",
  "modular-bitfield",
  "num_enum",
  "rand 0.8.5",
@@ -3296,7 +3312,7 @@ dependencies = [
  "im",
  "lazy_static",
  "log",
- "memmap2",
+ "memmap2 0.5.10",
  "rustc_version",
  "serde",
  "serde_bytes",
@@ -3523,7 +3539,7 @@ dependencies = [
  "log",
  "lru",
  "lz4",
- "memmap2",
+ "memmap2 0.5.10",
  "mockall",
  "modular-bitfield",
  "num-derive",
@@ -3599,7 +3615,7 @@ dependencies = [
  "lazy_static",
  "libsecp256k1",
  "log",
- "memmap2",
+ "memmap2 0.5.10",
  "num-derive",
  "num-traits",
  "num_enum",
