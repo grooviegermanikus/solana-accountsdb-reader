@@ -50,7 +50,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         // info!("size: {:?}", append_vec.len());
         for account_keys_chunk in &append_vec_iter(&append_vec)
             .map(|ref handle| handle.access().unwrap().meta.pubkey.to_bytes())
-            .chunks(1000)
+            .chunks(1024)
         {
             // for key in account_keys_chunk {
             //     info!("key: {:?}", key);
