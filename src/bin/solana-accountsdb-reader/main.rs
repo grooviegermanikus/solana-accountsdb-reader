@@ -28,9 +28,10 @@ use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use fst::{IntoStreamer, Set, SetBuilder, Streamer};
 use memmap2::MmapMut;
+use zstd::stream::zio::Writer;
 use solana_accountsdb_reader::parallel_io::pwrite_all;
 
 #[global_allocator]
@@ -58,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     let mut index_map = IndexMap::<[u8; 32], ()>::new();
     let mut trie: Trie<[u8; 32], ()> = Trie::new();
 
-    // let program_filter = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+    let program_filter = Pubkey::from_str("89A6cnoZMhsxKQzgJvQZS8UsTnojef5YW4z23Do1GuXv").unwrap();
 
     info!("Reading the snapshot...");
     let started_at = Instant::now();
@@ -72,9 +73,9 @@ async fn main() -> anyhow::Result<()> {
             let stored = handle.access().unwrap();
             let account_key = stored.meta.pubkey;
             let program_key = stored.account_meta.owner;
-            // if program_key != program_filter {
-            //     continue;
-            // }
+            if program_key != program_filter {
+                continue;
+            }
             // trie.insert(account_key.to_bytes(), ());
             index_map.insert(account_key.to_bytes(), ());
         }
@@ -114,23 +115,26 @@ async fn main() -> anyhow::Result<()> {
     let elapsed = started_at.elapsed();
     info!("sorted indexmap in {:.1}ms", elapsed.as_millis());
 
-    let started_at = Instant::now();
-    let mut fst_builder = SetBuilder::memory();
-    fst_builder.extend_iter(index_map.keys().map(|pk| pk.as_ref())).unwrap();
-    // index_map.keys().for_each(|pk| {
-    //     fst_builder.insert(pk).unwrap();
-    // });
-    let fst_bytes = fst_builder.into_inner().unwrap();
-    let elapsed = started_at.elapsed();
-    info!("built fst size in {} bytes in {:.1}ms", fst_bytes.len(), elapsed.as_millis());
+    if false {
+        let started_at = Instant::now();
+        let mut fst_builder = SetBuilder::memory();
+        fst_builder.extend_iter(index_map.keys().map(|pk| pk.as_ref())).unwrap();
+        // index_map.keys().for_each(|pk| {
+        //     fst_builder.insert(pk).unwrap();
+        // });
+        let fst_bytes = fst_builder.into_inner().unwrap();
+        let elapsed = started_at.elapsed();
+        info!("built fst size in {} bytes in {:.1}ms", fst_bytes.len(), elapsed.as_millis());
 
-
-    let set = Set::new(fst_bytes).unwrap();
-    info!("fst set size: {:?}", set.len());
-    let mut stream = set.range().ge([42,00]).lt([42,00,20]).into_stream();
-    while let Some(key) = stream.next() {
-        info!("range match: {:?}", key);
+        let set = Set::new(fst_bytes).unwrap();
+        info!("fst set size: {:?}", set.len());
+        let mut stream = set.range().ge([42,00]).lt([42,00,20]).into_stream();
+        while let Some(key) = stream.next() {
+            info!("range match: {:?}", key);
+        }
     }
+
+
 
     // let blob = bincode::serialize(&trie).unwrap();
     // info!("serialized trie to {} bytes ({:.1}bytes/item)", blob.len(), blob.len() as f64 / trie.count() as f64);
@@ -147,33 +151,65 @@ async fn main() -> anyhow::Result<()> {
 
 
     let FILE = "storage/indexmap.bin";
+    info!("Writing indexmap to {}", FILE);
     let file = OpenOptions::new().write(true)
         .create(true)
         .truncate(true)
         .open(FILE)
         .unwrap();
 
+    let mut writer = ParallelIoWriter {
+        file: &file,
+    };
 
     let started_at = Instant::now();
-    let serialized = serde_pickle::to_vec(&index_map, Default::default()).unwrap();
-    let mut mmap_file = MmapMut::map_anon(serialized.len())?;
-    mmap_file.copy_from_slice(&serialized);
-    mmap_file.flush().unwrap();
+    let mut buffer = BufWriter::with_capacity(16 * 1024 * 1024, writer);
+    serde_pickle::to_writer(&mut buffer, &index_map, Default::default()).unwrap();
+    buffer.flush().unwrap();
+
+    let file_size = fs::metadata(FILE).unwrap().len();
     info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
-        serialized.len(), serialized.len() as f64 / index_map.len() as f64,
+        file_size, file_size as f64 / index_map.len() as f64,
         started_at.elapsed().as_millis());
 
-    // let started_at = Instant::now();
-    // let serialized = serde_pickle::to_vec(&index_map, Default::default()).unwrap();
-    // pwrite_all(&file, &serialized, 0).unwrap();
-    //
-    // let file_size = fs::metadata(FILE).unwrap().len();
-    // info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
-    //     file_size, file_size as f64 / index_map.len() as f64,
-    //     started_at.elapsed().as_millis());
+
+    let started_at = Instant::now();
+    let read_file = OpenOptions::new().read(true)
+        .open(FILE)
+        .unwrap();
+    let mut read_buffer = BufReader::with_capacity(16 * 1024*1024, read_file);
+
+
+    let read_index: serde_pickle::error::Result::<IndexMap::<[u8; 32], ()>> =
+        serde_pickle::from_reader(&mut read_buffer, Default::default());
+    let read_index = read_index.expect("failed to deserialize indexmap");
+    info!("deserialized indexmap in {:.1}ms with {:?} entries",
+        started_at.elapsed().as_millis(),
+        read_index.len());
+
+
+
 
 
     Ok(())
+}
+
+struct ParallelIoWriter<'a> {
+    pub file: &'a File,
+}
+
+impl<'a> Write for ParallelIoWriter<'a> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.file
+            .write(buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map(|_| buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+
 }
 
 pub enum SupportedLoader {
