@@ -3267,6 +3267,7 @@ dependencies = [
  "memmap2 0.9.4",
  "num_cpus",
  "qp-trie",
+ "rayon",
  "reqwest",
  "savefile",
  "savefile-derive",
