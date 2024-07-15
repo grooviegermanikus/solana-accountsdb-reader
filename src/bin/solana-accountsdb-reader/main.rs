@@ -210,6 +210,28 @@ async fn main() -> anyhow::Result<()> {
         read_index.len());
     }
 
+
+
+    {
+        info!("Ser-Deser with bincode2 ...");
+        let config = bincode2::config::standard()
+            .with_big_endian()
+            .with_variable_int_encoding();
+
+        let bincode_bytes = bincode2::serde::encode_to_vec(&index_map, config).unwrap();
+        let serialized_size = bincode_bytes.len();
+
+        info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
+        serialized_size, serialized_size as f64 / index_map.len() as f64,
+        started_at.elapsed().as_millis());
+
+        let (read_index, _size): (IndexMap::<[u8; 32], ()>, usize) = bincode2::serde::decode_from_slice(&bincode_bytes, config).unwrap();
+        info!("deserialized indexmap in {:.1}ms with {:?} entries",
+        started_at.elapsed().as_millis(),
+        read_index.len());
+    }
+
+
     {
         let FILE = "storage/indexmap-savefile.bin";
         info!("Ser-Deser with savefile ...");
