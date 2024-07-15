@@ -162,30 +162,38 @@ async fn main() -> anyhow::Result<()> {
         file: &file,
     };
 
-    let started_at = Instant::now();
-    let mut buffer = BufWriter::with_capacity(16 * 1024 * 1024, writer);
-    serde_pickle::to_writer(&mut buffer, &index_map, Default::default()).unwrap();
-    buffer.flush().unwrap();
+    // let started_at = Instant::now();
+    // let mut buffer = BufWriter::with_capacity(16 * 1024 * 1024, writer);
+    // serde_pickle::to_writer(&mut buffer, &index_map, Default::default()).unwrap();
+    // buffer.flush().unwrap();
 
-    let file_size = fs::metadata(FILE).unwrap().len();
+    let bincode_bytes = bincode::serialize(&index_map).unwrap();
+    let file_size = bincode_bytes.len();
+
+    // let file_size = fs::metadata(FILE).unwrap().len();
     info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
         file_size, file_size as f64 / index_map.len() as f64,
         started_at.elapsed().as_millis());
 
 
-    let started_at = Instant::now();
-    let read_file = OpenOptions::new().read(true)
-        .open(FILE)
-        .unwrap();
-    let mut read_buffer = BufReader::with_capacity(16 * 1024*1024, read_file);
-
-
-    let read_index: serde_pickle::error::Result::<IndexMap::<[u8; 32], ()>> =
-        serde_pickle::from_reader(&mut read_buffer, Default::default());
-    let read_index = read_index.expect("failed to deserialize indexmap");
+    let read_index: IndexMap::<[u8; 32], ()> = bincode::deserialize(&bincode_bytes).unwrap();
     info!("deserialized indexmap in {:.1}ms with {:?} entries",
         started_at.elapsed().as_millis(),
         read_index.len());
+
+    // let started_at = Instant::now();
+    // let read_file = OpenOptions::new().read(true)
+    //     .open(FILE)
+    //     .unwrap();
+    // let mut read_buffer = BufReader::with_capacity(16 * 1024*1024, read_file);
+    //
+    //
+    // let read_index: serde_pickle::error::Result::<IndexMap::<[u8; 32], ()>> =
+    //     serde_pickle::from_reader(&mut read_buffer, Default::default());
+    // let read_index = read_index.expect("failed to deserialize indexmap");
+    // info!("deserialized indexmap in {:.1}ms with {:?} entries",
+    //     started_at.elapsed().as_millis(),
+    //     read_index.len());
 
 
 
