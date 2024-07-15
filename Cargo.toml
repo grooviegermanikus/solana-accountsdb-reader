@@ -36,8 +36,11 @@ cap = "0.1.2"
 qp-trie = { version = "0.8.2" , features = ["serde"]}
 fnv = "1.0.7"
 
-indexmap = { version = "2.2.6", features = ["rayon", "serde"] }
+# need to use 1.9 for savefile
+indexmap = { version = "1.9.3", features = ["rayon", "serde"] }
 serde-pickle = "1.1.1"
+savefile = { version = "0.17.6", features = ["indexmap", "compression", "derive"] }
+savefile-derive = "0.17.6"
 
 fst = "0.4.7"
 

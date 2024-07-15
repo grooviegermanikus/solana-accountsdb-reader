@@ -60,7 +60,12 @@ async fn main() -> anyhow::Result<()> {
     let mut index_map = IndexMap::<[u8; 32], ()>::new();
     let mut trie: Trie<[u8; 32], ()> = Trie::new();
 
+    // 27391 entries
     let program_filter = Pubkey::from_str("89A6cnoZMhsxKQzgJvQZS8UsTnojef5YW4z23Do1GuXv").unwrap();
+
+    // 27mn entries
+    let program_filter = Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap();
+
 
     info!("Reading the snapshot...");
     let started_at = Instant::now();
@@ -206,28 +211,35 @@ async fn main() -> anyhow::Result<()> {
     }
 
     {
-        info!("Ser-Deser with bincode2 ...");
-        let bincode_config = bincode2::config::standard()
-            // pick one of:
-            .with_big_endian()
-            // .with_little_endian()
-            // pick one of:
-            .with_variable_int_encoding()
-            // .with_fixed_int_encoding()
-            ;
+        let FILE = "storage/indexmap-savefile.bin";
+        info!("Ser-Deser with savefile ...");
+        info!("Writing indexmap to {}", FILE);
 
-        let bincode_bytes = bincode2::serde::encode_to_vec(&index_map, bincode_config).unwrap();
-        let serialized_size = bincode_bytes.len();
+        let file = OpenOptions::new().write(true)
+            .create(true)
+            .truncate(true)
+            .open(FILE)
+            .unwrap();
+        let mut buffer = BufWriter::with_capacity(16 * 1024 * 1024, file);
 
-        info!("serialized indexmap to {} bytes ({:.1}bytes/item) took {:.1}ms",
-        serialized_size, serialized_size as f64 / index_map.len() as f64,
-        started_at.elapsed().as_millis());
+        let started_at = Instant::now();
+        savefile::save(&mut buffer, 0, &index_map).unwrap();
+        buffer.flush().unwrap();
 
-        let (read_index, _size): (IndexMap::<[u8; 32], ()>, _) = bincode2::serde::decode_from_slice(&bincode_bytes, bincode_config).unwrap();
-        info!("deserialized indexmap in {:.1}ms with {:?} entries",
+        let serialized_size = fs::metadata(FILE).unwrap().len();
+
+        info!("serialized indexmap with savefile to {} bytes ({:.1}bytes/item) took {:.1}ms",
+            serialized_size, serialized_size as f64 / index_map.len() as f64,
+            started_at.elapsed().as_millis());
+
+
+        let started_at = Instant::now();
+        let read_index: IndexMap::<[u8; 32], ()> = savefile::load_file(FILE, 0).unwrap();
+        info!("deserialized indexmap using savefile in {:.1}ms with {:?} entries",
         started_at.elapsed().as_millis(),
         read_index.len());
     }
+
 
     Ok(())
 }
