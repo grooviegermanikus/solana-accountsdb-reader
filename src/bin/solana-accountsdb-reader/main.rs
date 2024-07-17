@@ -1,8 +1,13 @@
 use clap::Parser;
 use nohash_hasher::BuildNoHashHasher;
-use std::collections::HashMap;
+use rio::Completion;
+use solana_sdk::pubkey::Pubkey;
+use std::borrow::BorrowMut;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Instant;
 use std::{fs::OpenOptions, os::unix::fs::OpenOptionsExt};
 use {
@@ -11,14 +16,15 @@ use {
     std::fs::File,
 };
 
-const BUFFER_COUNT: usize = 256;
-const BUFFER_SIZE: usize = 4096*4096;
+const PAGE_SIZE: usize = 4096;
+const BUFFER_COUNT: usize = 4;
+const BUFFER_SIZE: usize = 2048 * PAGE_SIZE;
 
 // `O_DIRECT` requires all reads and writes
 // to be aligned to the block device's block
 // size. 4096 might not be the best, or even
 // a valid one, for yours!
-#[repr(align(4096))]
+#[repr(align(4096))] // cant use BLOCK_SIZE
 #[derive(Copy, Clone)]
 struct AlignedBuffer([u8; BUFFER_SIZE]);
 
@@ -30,6 +36,116 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 struct Args {
     #[arg(long)]
     pub snapshot_archive_path: String,
+}
+
+fn pk2id32(pk: &Pubkey) -> u32 {
+    let mut id = [0u8; 4];
+    id.copy_from_slice(&pk.to_bytes()[24..28]);
+    u32::from_le_bytes(id)
+}
+
+fn pk2id64(pk: &Pubkey) -> u64 {
+    let mut id = [0u8; 8];
+    id.copy_from_slice(&pk.to_bytes()[24..32]);
+    u64::from_le_bytes(id)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WeakAccountRef {
+    pub program_id: u32,
+    pub slot: u32,
+    pub offset: usize,
+}
+
+impl WeakAccountRef {
+    pub fn file_id(&self) -> u64 {
+        (self.program_id as u64) << 32 | (self.slot as u64)
+    }
+}
+
+// TODO: turn into real buffer file writer
+struct AccountStreamFile<'a> {
+    pub file: File,
+    pub buffers: Box<[AlignedBuffer; BUFFER_COUNT]>,
+    pub buffer_index: usize,
+    pub buffer_offset: usize,
+    pub completions: VecDeque<RefCell<Option<Completion<'a, usize>>>>,
+    pub ring: rio::Rio,
+}
+
+impl<'a> AccountStreamFile<'a> where {
+    pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize>{
+        let size = bytes.len();
+        let mut next_buffer_offset = self.buffer_offset + size;
+
+        // if the next_buffer_offset exceeds past BUFFER_SIZE
+        // immediately send of the current buffer to be written
+        // and move the write-head to the beginning of the next buffer
+        // in case all buffers are currently in use, wait for the first
+        // one to finish writing
+        if next_buffer_offset > BUFFER_SIZE {
+            let write = RefCell::new(self.ring.write_at(
+                &self.file,
+                &self.buffers[self.buffer_index % BUFFER_COUNT].0,
+                (self.buffer_index * BUFFER_SIZE) as u64,
+            ));
+            // call submit all, becasue we won't wait for this completion for a while
+            // self.ring.submit_all();
+
+            self.completions.push_back(write);
+
+            self.buffer_index += 1;
+            self.buffer_offset = 0;
+            next_buffer_offset = size;
+
+            if self.completions.len() > BUFFER_COUNT {
+                let c = self.completions.pop_front().unwrap();
+                c.into_inner().wait()?;
+            }
+        }
+
+        let mut buf = self.buffers[self.buffer_index % BUFFER_COUNT].0;
+        buf[self.buffer_offset..next_buffer_offset]
+            .copy_from_slice(bytes);
+
+        let offset = self.buffer_index * BUFFER_SIZE + self.buffer_offset;
+        self.buffer_offset = next_buffer_offset;
+        Ok(offset)
+    }
+
+    pub fn flush(& mut self) -> anyhow::Result<()> {
+        let write = self.ring.write_at(
+            &self.file,
+            &self.buffers[self.buffer_index % BUFFER_COUNT].0,
+            (self.buffer_index * BUFFER_SIZE) as u64,
+        );
+
+        self.buffer_index += 1;
+        self.buffer_offset = 0;
+
+        // queue last write and wait for all pending completions
+        write.wait()?;
+        for c in self.completions.drain(..) {
+            c.into_inner().unwrap().wait()?;
+        }
+
+        Ok(())
+    }
+}
+
+struct AccountDatabase<'a> {
+    pub path_prefix: String,
+    pub open_files: HashMap<u64, Box<AccountStreamFile<'a>>, BuildNoHashHasher<u64>>,
+}
+
+impl AccountDatabase<'_> {
+    pub fn new() -> Self {
+        // TODO: clean / create directory 
+        AccountDatabase {
+            path_prefix: "./".to_string(),
+            open_files: HashMap::with_capacity_and_hasher(100_000, BuildNoHashHasher::default()),
+        }
+    }
 }
 
 #[tokio::main]
@@ -55,8 +171,10 @@ async fn main() -> anyhow::Result<()> {
 
     let started_at = Instant::now();
 
-    let mut index: HashMap<u64, usize, BuildNoHashHasher<u64>> =
-        HashMap::with_capacity_and_hasher(1_000_000, BuildNoHashHasher::default());
+    // let mut gpa_index: HashMap<u32, Vec<WeakAccountRef>, BuildNoHashHasher<u32>> =
+    // HashMap::with_capacity_and_hasher(100_000, BuildNoHashHasher::default());
+    let mut pk_index: HashMap<u64, WeakAccountRef, BuildNoHashHasher<u64>> =
+        HashMap::with_capacity_and_hasher(600_000_000, BuildNoHashHasher::default());
 
     info!("... allocated index");
 
@@ -66,33 +184,34 @@ async fn main() -> anyhow::Result<()> {
     info!("... started ring");
 
     // open output file, with `O_DIRECT` set
+
     let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .custom_flags(libc::O_DIRECT)
-        .open("bff")?;
+    .read(true)
+    .write(true)
+    .create(true)
+    .truncate(true)
+    .custom_flags(libc::O_DIRECT)
+    .open("bff")?;
+
+    let stream = RefCell::new(AccountStreamFile {
+        file,
+        buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
+        buffer_index: 0,
+        buffer_offset: 0,
+        completions: VecDeque::with_capacity(BUFFER_COUNT+1),
+        ring
+    });
 
 
     info!("... file open");
-
-    let buffers = Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]);
-
-    info!("... buffers allocated");
-
-
-    let mut buf_i = 0;
-    let mut buf_o = 0;
-
-    let mut completions = vec![];
 
     let mut cnt_append_vecs = 0u64;
     let mut len_append_vecs = 0;
     let mut rem_append_vecs = 0;
 
     for append_vec in loader.iter() {
-        let append_vec = append_vec.unwrap();
+        let append_vec = append_vec.unwrap();                    
+        let slot = append_vec.slot() as u32;
         cnt_append_vecs += 1;
         len_append_vecs += append_vec.len();
         rem_append_vecs += append_vec.remaining_bytes();
@@ -103,37 +222,16 @@ async fn main() -> anyhow::Result<()> {
             let acc_i = append_vec.get_account(vec_o);
             match acc_i {
                 Some((acc, next)) => {
-                    let mut buf_on = buf_o + acc.stored_size;
-                    if buf_on > BUFFER_SIZE {
-                        let write = ring.write_at(
-                            &file,
-                            &buffers[buf_i % BUFFER_COUNT].0,
-                            (buf_i * BUFFER_SIZE) as u64,
-                        );
-                        completions.reverse();
-                        completions.push(write);
-                        completions.reverse();
+                
+                    let bytes = append_vec.get_slice(vec_o, acc.stored_size);
+                    let offset = {
+                        stream.write(bytes.unwrap().0)?
+                    };
+                    let program_id = pk2id32(&acc.account_meta.owner);
+                    let acc_ref = WeakAccountRef { offset, program_id, slot };
+                    pk_index.insert(pk2id64(&acc.meta.pubkey), acc_ref.clone());
+                    // gpa_index.insert(program_id, acc_ref);
 
-                        buf_i += 1;
-                        buf_o = 0;
-                        buf_on = acc.stored_size;
-
-                        if completions.len() > BUFFER_COUNT {
-                            let completion = completions.pop().unwrap();
-                            completion.wait()?;
-                        }
-                    }
-
-                    let mut buf = buffers[buf_i % BUFFER_COUNT].0;
-                    buf[buf_o..buf_on]
-                        .copy_from_slice(append_vec.get_slice(vec_o, acc.stored_size).unwrap().0);
-
-                    let offset = buf_i * BUFFER_SIZE + buf_o;
-                    let mut key = [0u8; 8];
-                    key.copy_from_slice(&acc.meta.pubkey.to_bytes()[24..32]);
-                    index.insert(u64::from_le_bytes(key), offset);
-
-                    buf_o = buf_on;
                     vec_o = next;
                 }
                 None => break 'vec,
@@ -141,16 +239,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let write = ring.write_at(
-        &file,
-        &buffers[buf_i % BUFFER_COUNT].0,
-        (buf_i * BUFFER_SIZE) as u64,
-    );
-    completions.push(write);
-
-    for c in completions.into_iter() {
-        c.wait()?;
-    }
+    stream.borrow_mut().flush()?;
 
     info!(
         "... read {} append vecs in {}s items stored:{} bytes remaining:{}",
@@ -160,13 +249,14 @@ async fn main() -> anyhow::Result<()> {
         rem_append_vecs,
     );
 
+
     info!(
         "... wrote {} buffers of {BUFFER_SIZE} bytes total:{}",
-        buf_i + 1,
-        (buf_i + 1) * BUFFER_SIZE
+        0, //stream.buffer_index,
+        0, //stream.buffer_index * BUFFER_SIZE
     );
 
-    info!("... index contains {} keys", index.len());
+    info!("... index contains {} keys", pk_index.len());
 
     Ok(())
 }
