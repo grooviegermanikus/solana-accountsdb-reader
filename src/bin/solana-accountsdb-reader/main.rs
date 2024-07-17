@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::AtomicU64;
 use log::warn;
 use {
     log::info,
@@ -56,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
     let filter = Pubkey::from_str("meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb").unwrap();
 
+    let count = AtomicU64::new(0);
 
     for vec in loader.iter() {
         let append_vec =  vec.unwrap();
@@ -68,7 +70,6 @@ async fn main() -> anyhow::Result<()> {
                 continue;
             }
 
-
             // see solana fn append_accounts
             let account_meta = AccountMeta {
                 lamports: stored.account_meta.lamports,
@@ -79,10 +80,13 @@ async fn main() -> anyhow::Result<()> {
 
             let _account = stored.account_meta.clone();
             let prefix = u64::from_be_bytes(account_pubkey.as_ref()[0..8].try_into().unwrap());
-            info!("prefix: {}", prefix);
             marble.write_batch([
                 (prefix, Some(&stored.data))
             ]).unwrap();
+            let prev = count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if prev % 10_000 == 0 {
+                info!("prefix: {}", prefix);
+            }
 
         }
     }
