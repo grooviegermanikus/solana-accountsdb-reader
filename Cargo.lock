@@ -805,6 +805,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concurrent-map"
+version = "5.0.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f5531a18ad61836deb8c2987422e44a38575564f423f448fe9e6cbbcb2171a"
+dependencies = [
+ "ebr",
+ "stack-map",
+]
+
+[[package]]
 name = "console_error_panic_hook"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,6 +1099,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abe71d579d1812060163dff96056261deb5bf6729b100fa2e36a68b9649ba3d3"
 
 [[package]]
+name = "ebr"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a7f90b4164e55fcf36357b68aa2c13f6c922b16ba96f219a5220abd5a94fc4b"
+dependencies = [
+ "shared-local-state",
+]
+
+[[package]]
 name = "ed25519"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1194,6 +1213,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
+name = "fault-injection"
+version = "1.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e3d175246dec3fddef3b1fcd57acdb023e4c562d032e9eccc5f246da3d7fed3"
+
+[[package]]
 name = "feature-probe"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1265,6 +1290,16 @@ name = "fragile"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
 
 [[package]]
 name = "futures"
@@ -1906,6 +1941,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "marble"
+version = "15.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a52f213bcbc4b186a9c901f5ccedfe546e834b7a1aa090543dcb65801146559"
+dependencies = [
+ "concurrent-map",
+ "crc32fast",
+ "fault-injection",
+ "fs2",
+ "log",
+ "pagetable",
+ "zstd-safe",
+]
+
+[[package]]
 name = "memchr"
 version = "2.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2278,6 +2328,12 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "pagetable"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92a516a35619e87f5c17e7a5dd0e0313aa01aecbd39b3c650b22a4500d74f6e0"
 
 [[package]]
 name = "parking_lot"
@@ -2982,6 +3038,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "shared-local-state"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a50ccb2f45251772ed15abfd1e5f10a305288187b1582ab2e4295b29bbb4929"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
 name = "signature"
 version = "1.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3111,6 +3176,7 @@ dependencies = [
  "futures",
  "itertools",
  "log",
+ "marble",
  "memmap2",
  "num_cpus",
  "reqwest",
@@ -3745,6 +3811,12 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+
+[[package]]
+name = "stack-map"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b49d6d36fee60faad91e23603db2356677b58ec2429237b39d5c60c26868f37c"
 
 [[package]]
 name = "static_assertions"

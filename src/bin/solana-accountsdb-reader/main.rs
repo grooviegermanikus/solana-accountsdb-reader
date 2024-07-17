@@ -22,6 +22,9 @@ use {
 };
 use clap::Parser;
 use itertools::Itertools;
+use marble::Config;
+use solana_accounts_db::account_storage::meta::AccountMeta;
+use solana_sdk::account::AccountSharedData;
 use solana_sdk::clock::Slot;
 use solana_sdk::pubkey::Pubkey;
 
@@ -45,8 +48,13 @@ async fn main() -> anyhow::Result<()> {
 
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
-    let mut accounts_per_slot: HashMap<Slot, u64> = HashMap::new();
-    let mut updates: HashMap<Pubkey, Vec<Slot>> = HashMap::new();
+    let marble = Config {
+        path: "heap".into(),
+        zstd_compression_level: None,
+        ..Config::default()
+    }.open().unwrap();
+
+    let filter = Pubkey::from_str("9MoKHTArqFYUWXCUzbU7xVnEQ2Z3n16dvgbn1MbtfHuq").unwrap();
 
 
     for vec in loader.iter() {
@@ -54,28 +62,31 @@ async fn main() -> anyhow::Result<()> {
         // info!("size: {:?}", append_vec.len());
         for handle in append_vec_iter(&append_vec) {
             let stored = handle.access().unwrap();
-            // info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-            let zzz = accounts_per_slot.entry(append_vec.slot()).or_default();
-            *zzz += 1;
+            let account_pubkey = stored.meta.pubkey;
+            if account_pubkey != filter {
+                continue;
+            }
 
-            updates.entry(stored.meta.pubkey).or_default().push(append_vec.slot());
+            let owner = stored.account_meta.owner;
+
+            // see solana fn append_accounts
+            let account_meta = AccountMeta {
+                lamports: stored.account_meta.lamports,
+                rent_epoch: stored.account_meta.rent_epoch,
+                owner: owner,
+                executable: stored.account_meta.executable,
+            };
+
+            let _account = stored.account_meta.clone();
+            let prefix = u64::from_be_bytes(account_pubkey.as_ref()[0..8].try_into().unwrap());
+            marble.write_batch([
+                (prefix, Some(&stored.data))
+            ]).unwrap();
+
         }
     }
 
-    for (slot, count) in accounts_per_slot.iter().sorted_by_key(|(slot, _)| *slot).take(100) {
-        info!("slot: {:?} count: {:?}", slot, count);
-    }
-
-    for (pubkey, slots) in updates.iter().filter(|(_, slots)| slots.len() > 1) {
-        info!("pubkey: {:?} slots: {:?}", pubkey, slots);
-    }
-
-    for (count, group) in &updates.into_iter().map(|(pubkey, slots)| (pubkey, slots.len()))
-        .sorted_by_key(|(_, count)| *count)
-        .group_by(|(pubkey, count)| *count) {
-        info!("count: {:?} groupsize: {}", count, group.count());
-    }
-
+    dbg!(marble.stats());
 
     Ok(())
 }
