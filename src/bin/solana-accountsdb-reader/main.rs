@@ -63,11 +63,11 @@ async fn main() -> anyhow::Result<()> {
         for handle in append_vec_iter(&append_vec) {
             let stored = handle.access().unwrap();
             let account_pubkey = stored.meta.pubkey;
-            if account_pubkey != filter {
+            let owner = stored.account_meta.owner;
+            if owner != filter {
                 continue;
             }
 
-            let owner = stored.account_meta.owner;
 
             // see solana fn append_accounts
             let account_meta = AccountMeta {
