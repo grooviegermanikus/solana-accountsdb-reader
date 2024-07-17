@@ -35,6 +35,8 @@ use solana_sdk::pubkey::Pubkey;
 pub struct Args {
     #[arg(long)]
     pub snapshot_archive_path: String,
+    #[arg(long)]
+    pub db_only: bool,
 }
 
 #[tokio::main]
@@ -43,8 +45,14 @@ async fn main() -> anyhow::Result<()> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    let Args { snapshot_archive_path } = Args::parse();
+    let Args { snapshot_archive_path, db_only } = Args::parse();
 
+    if db_only {
+
+        interact_with_db();
+
+        return Ok(());
+    }
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
@@ -94,6 +102,25 @@ async fn main() -> anyhow::Result<()> {
     dbg!(marble.stats());
 
     Ok(())
+}
+
+fn interact_with_db() {
+    let marble = Config {
+        path: "heap".into(),
+        zstd_compression_level: None,
+        ..Config::default()
+    }.open().unwrap();
+
+    for object_id in marble.allocated_object_ids().take(100) {
+        let account_data = marble.read(object_id)
+            .expect("IO error")
+            .expect("object not found");
+
+        info!("object_id: {}", object_id);
+        info!("account.data size: {:?}", account_data.len());
+    }
+
+
 }
 
 pub enum SupportedLoader {
