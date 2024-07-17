@@ -79,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
 
             let _account = stored.account_meta.clone();
             let prefix = u64::from_be_bytes(account_pubkey.as_ref()[0..8].try_into().unwrap());
+            info!("prefix: {}", prefix);
             marble.write_batch([
                 (prefix, Some(&stored.data))
             ]).unwrap();
