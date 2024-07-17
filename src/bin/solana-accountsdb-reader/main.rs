@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         ..Config::default()
     }.open().unwrap();
 
-    let filter = Pubkey::from_str("9MoKHTArqFYUWXCUzbU7xVnEQ2Z3n16dvgbn1MbtfHuq").unwrap();
+    let filter = Pubkey::from_str("meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb").unwrap();
 
 
     for vec in loader.iter() {
