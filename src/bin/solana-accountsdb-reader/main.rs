@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem;
 use std::path::PathBuf;
 use std::str::FromStr;
 use log::warn;
@@ -54,31 +55,54 @@ async fn main() -> anyhow::Result<()> {
         // info!("size: {:?}", append_vec.len());
         for handle in append_vec_iter(&append_vec) {
             let stored = handle.access().unwrap();
-            // info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-            let zzz = accounts_per_slot.entry(append_vec.slot()).or_default();
-            *zzz += 1;
+            let data = stored.data;
+            let account_key = stored.meta.pubkey;
+            let owner_key = stored.account_meta.owner;
 
-            updates.entry(stored.meta.pubkey).or_default().push(append_vec.slot());
+            const THRESHOLD_SIZE: usize = 1000;
+            const THRESHOLD_ZERO_TO_DATA_RATION: f32 = 0.2; // 20%
+
+
+            if data.len() < 1000 {
+                continue;
+            }
+
+            let trailing_zeros = num_of_trailing_zeros(&data);
+
+            if trailing_zeros as f32 / data.len() as f32 > THRESHOLD_ZERO_TO_DATA_RATION {
+                info!("account {:?} of program {:?} has {} trailing zeroes of total {}", account_key, owner_key, trailing_zeros, data.len());
+            }
+
         }
-    }
-
-    for (slot, count) in accounts_per_slot.iter().sorted_by_key(|(slot, _)| *slot).take(100) {
-        info!("slot: {:?} count: {:?}", slot, count);
-    }
-
-    for (pubkey, slots) in updates.iter().filter(|(_, slots)| slots.len() > 1) {
-        info!("pubkey: {:?} slots: {:?}", pubkey, slots);
-    }
-
-    for (count, group) in &updates.into_iter().map(|(pubkey, slots)| (pubkey, slots.len()))
-        .sorted_by_key(|(_, count)| *count)
-        .group_by(|(pubkey, count)| *count) {
-        info!("count: {:?} groupsize: {}", count, group.count());
     }
 
 
     Ok(())
 }
+
+fn num_of_trailing_zeros(buf: &[u8]) -> usize {
+    const SCALE: usize = mem::size_of::<u128>() / mem::size_of::<u8>(); // 16
+    let (prefix, aligned, suffix) = unsafe { buf.align_to::<u128>() };
+    // println!("prefix: {}, aligned: {}, suffix: {}", prefix.len(), aligned.len(), suffix.len());
+
+    let cnt_suffix = suffix.iter().rev().take_while(|&x| *x == 0).count();
+    // println!("cnt_suffix: {}", cnt_suffix);
+    if cnt_suffix < suffix.len() {
+        return cnt_suffix;
+    }
+
+    let cnt_aligned = aligned.iter().rev().take_while(|&x| *x == 0).count();
+    // println!("cnt_aligned: {}", cnt_aligned);
+    if cnt_aligned < aligned.len() {
+        // approximates to multiple of u128
+        return cnt_aligned * SCALE + cnt_suffix;
+    }
+    let cnt_prefix = prefix.iter().rev().take_while(|&x| *x == 0).count();
+    // println!("cnt_prefix: {}", cnt_prefix);
+
+    cnt_prefix + cnt_aligned * SCALE + cnt_suffix
+}
+
 
 pub enum SupportedLoader {
     Unpacked(UnpackedSnapshotExtractor),
