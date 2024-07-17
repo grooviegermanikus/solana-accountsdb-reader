@@ -46,9 +46,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
-    let mut accounts_per_slot: HashMap<Slot, u64> = HashMap::new();
-    let mut updates: HashMap<Pubkey, Vec<Slot>> = HashMap::new();
-
+    let mut total_zeros = 0;
+    let mut total_data = 0;
 
     for vec in loader.iter() {
         let append_vec =  vec.unwrap();
@@ -62,20 +61,22 @@ async fn main() -> anyhow::Result<()> {
             const THRESHOLD_SIZE: usize = 1000;
             const THRESHOLD_ZERO_TO_DATA_RATION: f32 = 0.2; // 20%
 
-
-            if data.len() < 1000 {
+            if data.len() < 100 {
                 continue;
             }
+            total_data += data.len();
 
             let trailing_zeros = num_of_trailing_zeros(&data);
 
             if trailing_zeros as f32 / data.len() as f32 > THRESHOLD_ZERO_TO_DATA_RATION {
                 info!("account {:?} of program {:?} has {} trailing zeroes of total {}", account_key, owner_key, trailing_zeros, data.len());
+                total_zeros += trailing_zeros;
             }
 
         }
     }
 
+    info!("total trailing zeros: {} of {} bytes", total_zeros, total_data);
 
     Ok(())
 }
