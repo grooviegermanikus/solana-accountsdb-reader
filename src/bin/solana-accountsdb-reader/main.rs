@@ -10,6 +10,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use std::{fs::OpenOptions, os::unix::fs::OpenOptionsExt};
+use futures::FutureExt;
 use {
     log::info,
     solana_accountsdb_reader::{archived::ArchiveSnapshotExtractor, SnapshotExtractor},
@@ -138,7 +139,9 @@ impl<'a> AccountStreamFile<'a> {
             // call submit all, becasue we won't wait for this completion for a while
             // self.ring.submit_all();
 
-            self.completions.push_back(RefCell::new(Some(write_op)));
+
+            // self.completions.push_back(RefCell::new(Some(write_op)));
+            self.completions.push_back(RefCell::new(write_op).map(|c| Some(c)));
 
 
             self.buffer_index += 1;
