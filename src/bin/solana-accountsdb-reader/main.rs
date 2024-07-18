@@ -261,7 +261,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    stream.borrow_mut().flush()?;
+    stream.flush()?;
 
     info!(
         "... read {} append vecs in {}s items stored:{} bytes remaining:{}",
