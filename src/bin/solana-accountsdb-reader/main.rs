@@ -111,7 +111,7 @@ struct AccountStreamFile<'a> {
 }
 
 impl<'a> AccountStreamFile<'a> {
-    pub fn writeZZ(&'a mut self, bytes: &[u8]) -> anyhow::Result<usize>{
+    pub fn writeZZ(&'a mut self) -> anyhow::Result<usize>{
         Ok(232)
     }
     // writes to buffer and eventually issues a uring submission write to the file
