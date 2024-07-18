@@ -85,7 +85,7 @@ struct AccountStreamFile<'a> {
     pub ring: rio::Rio,
 }
 
-impl<'a> AccountStreamFile<'a> where {
+impl<'a> AccountStreamFile<'a> {
     // writes to buffer and eventually issues a uring submission write to the file
     // TODO wrap return value in FileOffset
     pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize>{
@@ -110,7 +110,7 @@ impl<'a> AccountStreamFile<'a> where {
             // call submit all, becasue we won't wait for this completion for a while
             // self.ring.submit_all();
 
-            self.completions.push_back(write_op);
+            self.completions.push_back(Some(write_op));
 
 
             self.buffer_index += 1;
@@ -119,7 +119,9 @@ impl<'a> AccountStreamFile<'a> where {
 
             if self.completions.len() > BUFFER_COUNT {
                 let c = self.completions.pop_front().unwrap();
-                c.into_inner().wait()?;
+                c.into_inner()
+                    .expect("completions should not be None") // TODO double-check
+                    .wait()?;
             }
         } // -- END roll to next buffer
 
@@ -245,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
                 
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
-                        stream.write(bytes.unwrap().0)?
+                        stream.borrow_mut().write(bytes.unwrap().0)?
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
                     let acc_ref = WeakAccountRef { offset, program_id, slot };
