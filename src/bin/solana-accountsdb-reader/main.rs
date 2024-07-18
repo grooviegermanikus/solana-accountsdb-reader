@@ -215,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
     .custom_flags(libc::O_DIRECT)
     .open("bff")?;
 
-    let stream = AccountStreamFile {
+    let mut stream = AccountStreamFile {
         file,
         buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
         buffer_index: 0,
@@ -247,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
                 
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
-                        let mut stream_mut = &stream;
+                        let mut stream_mut = &mut stream;
                         stream_mut.write(bytes.unwrap().0)?
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
@@ -263,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     {
-        let mut stream_mut = &stream;
+        let mut stream_mut = &mut stream;
         stream_mut.flush()?;
     }
 
