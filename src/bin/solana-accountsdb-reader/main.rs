@@ -215,14 +215,14 @@ async fn main() -> anyhow::Result<()> {
     .custom_flags(libc::O_DIRECT)
     .open("bff")?;
 
-    let stream = RefCell::new(AccountStreamFile {
+    let mut stream = AccountStreamFile {
         file,
         buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
         buffer_index: 0,
         buffer_offset: 0,
         completions: VecDeque::with_capacity(BUFFER_COUNT+1),
         ring
-    });
+    };
 
 
     info!("... file open");
@@ -247,7 +247,6 @@ async fn main() -> anyhow::Result<()> {
                 
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
-                        let mut stream = stream.borrow_mut();
                         stream.write(bytes.unwrap().0)?
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
