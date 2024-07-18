@@ -111,6 +111,9 @@ struct AccountStreamFile<'a> {
 }
 
 impl<'a> AccountStreamFile<'a> {
+    pub fn writeZZ(&'a mut self, bytes: &[u8]) -> anyhow::Result<usize>{
+        Ok(232)
+    }
     // writes to buffer and eventually issues a uring submission write to the file
     // TODO wrap return value in FileOffset
     pub fn write(&'a mut self, bytes: &[u8]) -> anyhow::Result<usize>{
@@ -283,7 +286,8 @@ async fn main() -> anyhow::Result<()> {
                 
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
-                        let foo = stream.write(bytes.unwrap().0)?;
+                        // let foo = stream.write(bytes.unwrap().0)?;
+                        stream.writeZZ()?;
                         // dummy.write(bytes.unwrap().0)?
                         53
                     };
