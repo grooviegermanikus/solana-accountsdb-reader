@@ -149,9 +149,10 @@ impl<'a> AccountStreamFile<'a> {
 
             if self.completions.len() > BUFFER_COUNT {
                 let c = self.completions.pop_front().unwrap();
-                c.into_inner()
-                    .expect("completions should not be None") // TODO double-check
-                    .wait()?;
+                c.wait()?;
+                // c.into_inner()
+                //     .expect("completions should not be None") // TODO double-check
+                //     .wait()?;
             }
         } // -- END roll to next buffer
 
