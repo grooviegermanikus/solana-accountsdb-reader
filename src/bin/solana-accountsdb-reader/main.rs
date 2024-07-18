@@ -102,15 +102,15 @@ impl<'a> AccountStreamFile<'a> {
         // one to finish writing
         if next_buffer_offset > BUFFER_SIZE {
             // FIXME guess we lose the data from buffer_offset until end of buffer
-            let write_op = RefCell::new(self.ring.write_at(
+            let write_op = self.ring.write_at(
                 &self.file,
                 &self.buffers[self.buffer_index % BUFFER_COUNT].0,
                 (self.buffer_index * BUFFER_SIZE) as u64,
-            ));
+            );
             // call submit all, becasue we won't wait for this completion for a while
             // self.ring.submit_all();
 
-            self.completions.push_back(Some(write_op));
+            self.completions.push_back(RefCell::new(Some(write_op)));
 
 
             self.buffer_index += 1;
