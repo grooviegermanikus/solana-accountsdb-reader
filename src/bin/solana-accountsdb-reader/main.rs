@@ -1,3 +1,5 @@
+mod foo;
+
 use clap::Parser;
 use nohash_hasher::BuildNoHashHasher;
 use rio::Completion;
@@ -247,8 +249,7 @@ async fn main() -> anyhow::Result<()> {
                 
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
-                        let mut stream_mut = &mut stream;
-                        stream_mut.write(bytes.unwrap().0)?
+                        stream.write(bytes.unwrap().0)?
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
                     let acc_ref = WeakAccountRef { offset, program_id, slot };
@@ -262,10 +263,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    {
-        let mut stream_mut = &mut stream;
-        stream_mut.flush()?;
-    }
+    stream.flush()?;
 
     info!(
         "... read {} append vecs in {}s items stored:{} bytes remaining:{}",
