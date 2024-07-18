@@ -72,6 +72,15 @@ impl WeakAccountRef {
 }
 
 pub struct Dummy {
+    pub file: File,
+}
+
+impl Default for Dummy {
+    fn default() -> Self {
+        Dummy {
+            file: File::open("zzzzz").unwrap(),
+        }
+    }
 }
 
 impl Dummy {
