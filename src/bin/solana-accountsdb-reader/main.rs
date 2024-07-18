@@ -116,7 +116,7 @@ impl<'a> AccountStreamFile<'a> {
     }
     // writes to buffer and eventually issues a uring submission write to the file
     // TODO wrap return value in FileOffset
-    pub fn write(&'a mut self, bytes: &[u8]) -> anyhow::Result<usize>{
+    pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize>{
         let size = bytes.len();
         // TODO assert that completions deque does not grow
         // TODO handle case when size is larger than BUFFER_SIZE
