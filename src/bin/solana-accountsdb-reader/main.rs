@@ -288,7 +288,7 @@ async fn main() -> anyhow::Result<()> {
                     let offset = {
                         // let foo = stream.write(bytes.unwrap().0)?;
                         // stream.writeZZ()?;
-                        let bar = dummy.write(bytes.unwrap().0)?;
+                        // let bar = dummy.write(bytes.unwrap().0)?;
                         53
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
@@ -304,7 +304,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     stream.flush()?;
-    dummy.flush()?;
+    // dummy.flush()?;
 
     info!(
         "... read {} append vecs in {}s items stored:{} bytes remaining:{}",
