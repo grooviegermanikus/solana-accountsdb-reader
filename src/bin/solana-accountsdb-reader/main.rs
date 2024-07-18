@@ -247,7 +247,8 @@ async fn main() -> anyhow::Result<()> {
                 
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
-                        stream.borrow_mut().write(bytes.unwrap().0)?
+                        let mut stream = stream.borrow_mut();
+                        stream.write(bytes.unwrap().0)?
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
                     let acc_ref = WeakAccountRef { offset, program_id, slot };
