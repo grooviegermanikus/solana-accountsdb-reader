@@ -287,7 +287,7 @@ async fn main() -> anyhow::Result<()> {
                     let bytes = append_vec.get_slice(vec_o, acc.stored_size);
                     let offset = {
                         // let foo = stream.write(bytes.unwrap().0)?;
-                        stream.writeZZ()?;
+                        // stream.writeZZ()?;
                         let bar = dummy.write(bytes.unwrap().0)?;
                         53
                     };
