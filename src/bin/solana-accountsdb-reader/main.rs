@@ -79,7 +79,8 @@ impl Dummy {
         Ok(bytes.len())
     }
 
-    pub fn flush(&mut self) {
+    pub fn flush(&mut self) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 
