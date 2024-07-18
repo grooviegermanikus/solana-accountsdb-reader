@@ -71,7 +71,7 @@ impl WeakAccountRef {
     }
 }
 
-pub struct Dummy {
+pub struct Dummy<'a> {
     pub file: File,
     // consecutive list of equally sized buffers which map to the underlying file (BUFFER_SIZE * BUFFER_COUNT)
     pub buffers: Box<[AlignedBuffer; BUFFER_COUNT]>,
@@ -84,7 +84,7 @@ pub struct Dummy {
     pub ring: rio::Rio,
 }
 
-impl Dummy {
+impl<'a> Dummy<'a> {
     pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize> {
         Ok(bytes.len())
     }
