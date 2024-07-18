@@ -85,7 +85,7 @@ pub struct Dummy<'a> {
 }
 
 impl<'a> Dummy<'a> {
-    pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize> {
+    pub fn write(&'a mut self, bytes: &[u8]) -> anyhow::Result<usize> {
         Ok(bytes.len())
     }
 
