@@ -248,9 +248,7 @@ async fn main() -> anyhow::Result<()> {
         ring
     };
 
-    let mut dummy = Dummy {
-
-    };
+    let mut dummy = Dummy::default();
 
 
     info!("... file open");
