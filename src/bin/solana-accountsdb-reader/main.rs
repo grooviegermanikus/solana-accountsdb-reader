@@ -250,7 +250,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let file2 = OpenOptions::new().open("bff22")?;
-    let rin2 = rio::new()?;
+    let ring2 = rio::new()?;
     let mut dummy = Dummy {
         file: file2,
         buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
