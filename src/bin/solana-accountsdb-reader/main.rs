@@ -107,7 +107,7 @@ struct AccountStreamFile<'a> {
     pub buffer_index: usize,
     // offset of the next write position the current buffer
     pub buffer_offset: usize,
-    pub completions: VecDeque<RefCell<Option<Completion<'a, usize>>>>,
+    pub completions: VecDeque<Completion<'a, usize>>,
     pub ring: rio::Rio,
 }
 
@@ -140,8 +140,7 @@ impl<'a> AccountStreamFile<'a> {
             // self.ring.submit_all();
 
 
-            // self.completions.push_back(RefCell::new(Some(write_op)));
-            self.completions.push_back(RefCell::new(write_op).map(|c| Some(c)));
+            self.completions.push_back(write_op);
 
 
             self.buffer_index += 1;
@@ -178,7 +177,8 @@ impl<'a> AccountStreamFile<'a> {
         // queue last write and wait for all pending completions
         write_op.wait()?;
         for c in self.completions.drain(..) {
-            c.into_inner().unwrap().wait()?;
+            c.wait()?;
+            // c.into_inner().unwrap().wait()?;
         }
 
         Ok(())
