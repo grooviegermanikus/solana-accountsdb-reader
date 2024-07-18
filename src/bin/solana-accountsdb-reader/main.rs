@@ -1,5 +1,3 @@
-mod foo;
-
 use clap::Parser;
 use nohash_hasher::BuildNoHashHasher;
 use rio::Completion;
