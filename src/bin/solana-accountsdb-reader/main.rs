@@ -26,6 +26,7 @@ const BUFFER_SIZE: usize = 2048 * PAGE_SIZE;
 // a valid one, for yours!
 #[repr(align(4096))] // cant use BLOCK_SIZE
 #[derive(Copy, Clone)]
+// TODO use MaybeUninit
 struct AlignedBuffer([u8; BUFFER_SIZE]);
 
 #[global_allocator]
@@ -48,6 +49,8 @@ fn pk2id64(pk: &Pubkey) -> u64 {
     let mut id = [0u8; 8];
     id.copy_from_slice(&pk.to_bytes()[24..32]);
     u64::from_le_bytes(id)
+    // TODO use this
+    // u64::from_be_bytes(pubkey.as_ref()[0..PREFIX_SIZE].try_into().unwrap())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -73,7 +76,8 @@ struct AccountStreamFile<'a> {
     pub file: File,
     // consecutive list of equally sized buffers which map to the underlying file (BUFFER_SIZE * BUFFER_COUNT)
     pub buffers: Box<[AlignedBuffer; BUFFER_COUNT]>,
-    // the buffer currently in use
+    // logical index of buffer-sized positions in file AND the index of the buffer to use (buffer_index % BUFFER_COUNT)
+    // grows monotonically
     pub buffer_index: usize,
     // offset of the next write position the current buffer
     pub buffer_offset: usize,
@@ -86,6 +90,7 @@ impl<'a> AccountStreamFile<'a> where {
     // TODO wrap return value in FileOffset
     pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize>{
         let size = bytes.len();
+        // TODO assert that completions deque does not grow
         // TODO handle case when size is larger than BUFFER_SIZE
         // TODO assert alignment
         let mut next_buffer_offset = self.buffer_offset + size;
@@ -106,6 +111,7 @@ impl<'a> AccountStreamFile<'a> where {
             // self.ring.submit_all();
 
             self.completions.push_back(write_op);
+
 
             self.buffer_index += 1;
             self.buffer_offset = 0;
@@ -186,6 +192,7 @@ async fn main() -> anyhow::Result<()> {
 
     // let mut gpa_index: HashMap<u32, Vec<WeakAccountRef>, BuildNoHashHasher<u32>> =
     // HashMap::with_capacity_and_hasher(100_000, BuildNoHashHasher::default());
+    // TODO use IntMap<u64, ...>
     let mut pk_index: HashMap<u64, WeakAccountRef, BuildNoHashHasher<u64>> =
         HashMap::with_capacity_and_hasher(600_000_000, BuildNoHashHasher::default());
 
