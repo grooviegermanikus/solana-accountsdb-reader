@@ -51,6 +51,11 @@ fn pk2id64(pk: &Pubkey) -> u64 {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct FileOffset {
+    pub offset: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct WeakAccountRef {
     pub program_id: u32,
     pub slot: u32,
@@ -66,16 +71,23 @@ impl WeakAccountRef {
 // TODO: turn into real buffer file writer
 struct AccountStreamFile<'a> {
     pub file: File,
+    // consecutive list of equally sized buffers which map to the underlying file (BUFFER_SIZE * BUFFER_COUNT)
     pub buffers: Box<[AlignedBuffer; BUFFER_COUNT]>,
+    // the buffer currently in use
     pub buffer_index: usize,
+    // offset of the next write position the current buffer
     pub buffer_offset: usize,
     pub completions: VecDeque<RefCell<Option<Completion<'a, usize>>>>,
     pub ring: rio::Rio,
 }
 
 impl<'a> AccountStreamFile<'a> where {
+    // writes to buffer and eventually issues a uring submission write to the file
+    // TODO wrap return value in FileOffset
     pub fn write(&mut self, bytes: &[u8]) -> anyhow::Result<usize>{
         let size = bytes.len();
+        // TODO handle case when size is larger than BUFFER_SIZE
+        // TODO assert alignment
         let mut next_buffer_offset = self.buffer_offset + size;
 
         // if the next_buffer_offset exceeds past BUFFER_SIZE
@@ -84,7 +96,8 @@ impl<'a> AccountStreamFile<'a> where {
         // in case all buffers are currently in use, wait for the first
         // one to finish writing
         if next_buffer_offset > BUFFER_SIZE {
-            let write = RefCell::new(self.ring.write_at(
+            // FIXME guess we lose the data from buffer_offset until end of buffer
+            let write_op = RefCell::new(self.ring.write_at(
                 &self.file,
                 &self.buffers[self.buffer_index % BUFFER_COUNT].0,
                 (self.buffer_index * BUFFER_SIZE) as u64,
@@ -92,7 +105,7 @@ impl<'a> AccountStreamFile<'a> where {
             // call submit all, becasue we won't wait for this completion for a while
             // self.ring.submit_all();
 
-            self.completions.push_back(write);
+            self.completions.push_back(write_op);
 
             self.buffer_index += 1;
             self.buffer_offset = 0;
@@ -102,19 +115,19 @@ impl<'a> AccountStreamFile<'a> where {
                 let c = self.completions.pop_front().unwrap();
                 c.into_inner().wait()?;
             }
-        }
+        } // -- END roll to next buffer
 
         let mut buf = self.buffers[self.buffer_index % BUFFER_COUNT].0;
         buf[self.buffer_offset..next_buffer_offset]
             .copy_from_slice(bytes);
 
-        let offset = self.buffer_index * BUFFER_SIZE + self.buffer_offset;
+        let file_offset = self.buffer_index * BUFFER_SIZE + self.buffer_offset;
         self.buffer_offset = next_buffer_offset;
-        Ok(offset)
+        Ok(file_offset)
     }
 
     pub fn flush(& mut self) -> anyhow::Result<()> {
-        let write = self.ring.write_at(
+        let write_op = self.ring.write_at(
             &self.file,
             &self.buffers[self.buffer_index % BUFFER_COUNT].0,
             (self.buffer_index * BUFFER_SIZE) as u64,
@@ -124,7 +137,7 @@ impl<'a> AccountStreamFile<'a> where {
         self.buffer_offset = 0;
 
         // queue last write and wait for all pending completions
-        write.wait()?;
+        write_op.wait()?;
         for c in self.completions.drain(..) {
             c.into_inner().unwrap().wait()?;
         }
@@ -135,7 +148,7 @@ impl<'a> AccountStreamFile<'a> where {
 
 struct AccountDatabase<'a> {
     pub path_prefix: String,
-    pub open_files: HashMap<u64, Box<AccountStreamFile<'a>>, BuildNoHashHasher<u64>>,
+    pub open_files: nohash_hasher::IntMap<u64, Box<AccountStreamFile<'a>>>,
 }
 
 impl AccountDatabase<'_> {
