@@ -73,14 +73,15 @@ impl WeakAccountRef {
 
 pub struct Dummy {
     pub file: File,
-}
-
-impl Default for Dummy {
-    fn default() -> Self {
-        Dummy {
-            file: File::open("zzzzz").unwrap(),
-        }
-    }
+    // consecutive list of equally sized buffers which map to the underlying file (BUFFER_SIZE * BUFFER_COUNT)
+    pub buffers: Box<[AlignedBuffer; BUFFER_COUNT]>,
+    // logical index of buffer-sized positions in file AND the index of the buffer to use (buffer_index % BUFFER_COUNT)
+    // grows monotonically
+    pub buffer_index: usize,
+    // offset of the next write position the current buffer
+    pub buffer_offset: usize,
+    pub completions: VecDeque<RefCell<Option<Completion<'a, usize>>>>,
+    pub ring: rio::Rio,
 }
 
 impl Dummy {
@@ -248,7 +249,16 @@ async fn main() -> anyhow::Result<()> {
         ring
     };
 
-    let mut dummy = Dummy::default();
+    let file2 = OpenOptions::new().open("bff22")?;
+    let rin2 = rio::new()?;
+    let mut dummy = Dummy {
+        file: file2,
+        buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
+        buffer_index: 0,
+        buffer_offset: 0,
+        completions: VecDeque::with_capacity(BUFFER_COUNT+1),
+        ring: ring2
+    };
 
 
     info!("... file open");
