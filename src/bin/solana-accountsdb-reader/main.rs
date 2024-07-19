@@ -179,7 +179,9 @@ impl<'a> AccountStreamFile<'a> {
 
         // queue last write and wait for all pending completions
         write_op.wait()?;
-        for c in self.completions.drain(..) {
+
+        let mut compl_mut = self.completions.as_ref().borrow_mut();
+        for c in compl_mut.drain(..) {
             c.wait()?;
             // c.into_inner().unwrap().wait()?;
         }
