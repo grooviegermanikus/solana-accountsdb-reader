@@ -141,15 +141,16 @@ impl<'a> AccountStreamFile<'a> {
             // self.ring.submit_all();
 
 
-            self.completions.as_ref().borrow_mut().push_back(write_op);
+            let mut compl_mut = self.completions.as_ref().borrow_mut();
+            compl_mut.push_back(write_op);
 
 
             self.buffer_index += 1;
             self.buffer_offset = 0;
             next_buffer_offset = size;
 
-            if self.completions.len() > BUFFER_COUNT {
-                let c = self.completions.pop_front().unwrap();
+            if compl_mut.len() > BUFFER_COUNT {
+                let c = compl_mut.pop_front().unwrap();
                 c.wait()?;
                 // c.into_inner()
                 //     .expect("completions should not be None") // TODO double-check
