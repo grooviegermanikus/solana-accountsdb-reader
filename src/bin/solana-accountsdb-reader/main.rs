@@ -107,7 +107,7 @@ struct AccountStreamFile<'a> {
     pub buffer_index: usize,
     // offset of the next write position the current buffer
     pub buffer_offset: usize,
-    pub completions: VecDeque<Completion<'a, usize>>,
+    pub completions: Rc<RefCell<Vec<Completion<'a, usize>>>>,
     pub ring: rio::Rio,
 }
 
@@ -140,7 +140,7 @@ impl<'a> AccountStreamFile<'a> {
             // self.ring.submit_all();
 
 
-            self.completions.push_back(write_op);
+            self.completions.as_ref().borrow_mut().push(write_op);
 
 
             self.buffer_index += 1;
