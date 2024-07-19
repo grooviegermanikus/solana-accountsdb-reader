@@ -118,7 +118,7 @@ impl<'a> AccountStreamFile<'a> {
     }
     // writes to buffer and eventually issues a uring submission write to the file
     // TODO wrap return value in FileOffset
-    pub fn write(&'a mut self, bytes: &[u8]) -> anyhow::Result<usize>{
+    pub fn write(&'a self, bytes: &[u8]) -> anyhow::Result<usize>{
         let size = bytes.len();
         // TODO assert that completions deque does not grow
         // TODO handle case when size is larger than BUFFER_SIZE
@@ -251,7 +251,7 @@ async fn main() -> anyhow::Result<()> {
     .custom_flags(libc::O_DIRECT)
     .open("bff")?;
 
-    let mut stream = AccountStreamFile {
+    let stream = AccountStreamFile {
         file,
         buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
         buffer_index: 0,
@@ -285,7 +285,7 @@ async fn main() -> anyhow::Result<()> {
                         let foo = stream.write(bytes.unwrap().0)?;
                         // stream.writeZZ()?;
                         // let bar = dummy.write(bytes.unwrap().0)?;
-                        53
+                        foo
                     };
                     let program_id = pk2id32(&acc.account_meta.owner);
                     let acc_ref = WeakAccountRef { offset, program_id, slot };
