@@ -108,7 +108,7 @@ struct AccountStreamFile<'a> {
     pub buffer_index: usize,
     // offset of the next write position the current buffer
     pub buffer_offset: usize,
-    pub completions: Rc<RefCell<Vec<Completion<'a, usize>>>>,
+    pub completions: Rc<RefCell<VecDeque<Completion<'a, usize>>>>,
     pub ring: rio::Rio,
 }
 
@@ -141,7 +141,7 @@ impl<'a> AccountStreamFile<'a> {
             // self.ring.submit_all();
 
 
-            self.completions.as_ref().borrow_mut().push(write_op);
+            self.completions.as_ref().borrow_mut().push_back(write_op);
 
 
             self.buffer_index += 1;
@@ -253,21 +253,9 @@ async fn main() -> anyhow::Result<()> {
         buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
         buffer_index: 0,
         buffer_offset: 0,
-        completions: VecDeque::with_capacity(BUFFER_COUNT+1),
+        completions: Rc::new(RefCell::new(VecDeque::with_capacity(BUFFER_COUNT+1))),
         ring
     };
-
-    let file2 = OpenOptions::new().open("bff22")?;
-    let ring2 = rio::new()?;
-    let mut dummy = Dummy {
-        file: file2,
-        buffers: Box::new([AlignedBuffer([0u8; BUFFER_SIZE]); BUFFER_COUNT]),
-        buffer_index: 0,
-        buffer_offset: 0,
-        completions: VecDeque::with_capacity(BUFFER_COUNT+1),
-        ring: ring2
-    };
-
 
     info!("... file open");
 
