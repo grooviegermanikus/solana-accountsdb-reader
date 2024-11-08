@@ -1,7 +1,13 @@
+mod mint_reader;
+
+use clap::Parser;
+use itertools::Itertools;
+use log::{debug, warn};
+use solana_sdk::clock::Slot;
+use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
-use log::warn;
 use {
     log::info,
     reqwest::blocking::Response,
@@ -20,11 +26,6 @@ use {
         sync::Arc,
     },
 };
-use clap::Parser;
-use itertools::Itertools;
-use solana_sdk::clock::Slot;
-use solana_sdk::pubkey::Pubkey;
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -43,39 +44,50 @@ async fn main() -> anyhow::Result<()> {
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
 
-    let mut loader: ArchiveSnapshotExtractor<File> = ArchiveSnapshotExtractor::open(&archive_path).unwrap();
+    let mut loader: ArchiveSnapshotExtractor<File> =
+        ArchiveSnapshotExtractor::open(&archive_path).unwrap();
 
     let mut accounts_per_slot: HashMap<Slot, u64> = HashMap::new();
     let mut updates: HashMap<Pubkey, Vec<Slot>> = HashMap::new();
 
+    let mut writer_spl = csv::Writer::from_path("mints_spl_token.csv").unwrap();
+    let mut writer_token2022 = csv::Writer::from_path("mints_token2022.csv").unwrap();
 
     for vec in loader.iter() {
-        let append_vec =  vec.unwrap();
-        // info!("size: {:?}", append_vec.len());
+        let append_vec = vec.unwrap();
         for handle in append_vec_iter(&append_vec) {
             let stored = handle.access().unwrap();
-            // info!("account {:?}: {}", stored.meta.pubkey, stored.account_meta.lamports);
-            let zzz = accounts_per_slot.entry(append_vec.slot()).or_default();
-            *zzz += 1;
+            let acc_pubkey = stored.meta.pubkey;
+            let owner_pubkey = stored.account_meta.owner;
 
-            updates.entry(stored.meta.pubkey).or_default().push(append_vec.slot());
+
+            let is_token2022 = ( owner_pubkey == spl_token_2022::ID) && mint_reader::is_token2022_mint(&stored.data, acc_pubkey);
+            let is_spl_token = ( owner_pubkey == spl_token::ID ) && mint_reader::is_spltoken_mint(&stored.data, acc_pubkey);
+
+            match (is_token2022, is_spl_token) {
+                (true, true) => {
+                    warn!(
+                        "both token2022 and spl_token found for account {}", acc_pubkey);
+                }
+                (true, false) => {
+                    writer_token2022
+                        .write_record(&[acc_pubkey.to_string().as_str()])
+                        .unwrap();
+                }
+                (false, true) => {
+                    writer_spl
+                        .write_record(&[acc_pubkey.to_string().as_str()])
+                        .unwrap();
+                }
+                (false, false) => {
+                    debug!("not a mint {}", acc_pubkey);
+                }
+            }
         }
     }
 
-    for (slot, count) in accounts_per_slot.iter().sorted_by_key(|(slot, _)| *slot).take(100) {
-        info!("slot: {:?} count: {:?}", slot, count);
-    }
-
-    for (pubkey, slots) in updates.iter().filter(|(_, slots)| slots.len() > 1) {
-        info!("pubkey: {:?} slots: {:?}", pubkey, slots);
-    }
-
-    for (count, group) in &updates.into_iter().map(|(pubkey, slots)| (pubkey, slots.len()))
-        .sorted_by_key(|(_, count)| *count)
-        .group_by(|(pubkey, count)| *count) {
-        info!("count: {:?} groupsize: {}", count, group.count());
-    }
-
+    writer_spl.flush().unwrap();
+    writer_token2022.flush().unwrap();
 
     Ok(())
 }
