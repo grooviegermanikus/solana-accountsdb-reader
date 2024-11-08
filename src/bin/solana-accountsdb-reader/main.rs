@@ -5,7 +5,7 @@ use itertools::Itertools;
 use log::{debug, warn};
 use solana_sdk::clock::Slot;
 use solana_sdk::pubkey::Pubkey;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use {
@@ -34,6 +34,13 @@ pub struct Args {
     pub snapshot_archive_path: String,
 }
 
+
+enum TokenType {
+    Spl,
+    SplEmpty,
+    Token2022,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init_from_env(
@@ -50,8 +57,7 @@ async fn main() -> anyhow::Result<()> {
     let mut accounts_per_slot: HashMap<Slot, u64> = HashMap::new();
     let mut updates: HashMap<Pubkey, Vec<Slot>> = HashMap::new();
 
-    let mut writer_spl = csv::Writer::from_path("mints_spl_token.csv").unwrap();
-    let mut writer_token2022 = csv::Writer::from_path("mints_token2022.csv").unwrap();
+    let mut all_tokens: HashMap<Pubkey, TokenType> = HashMap::new();
 
     for vec in loader.iter() {
         let append_vec = vec.unwrap();
@@ -60,9 +66,9 @@ async fn main() -> anyhow::Result<()> {
             let acc_pubkey = stored.meta.pubkey;
             let owner_pubkey = stored.account_meta.owner;
 
-
             let is_token2022 = ( owner_pubkey == spl_token_2022::ID) && mint_reader::is_token2022_mint(&stored.data, acc_pubkey);
-            let is_spl_token = ( owner_pubkey == spl_token::ID ) && mint_reader::is_spltoken_mint(&stored.data, acc_pubkey);
+            let spl = mint_reader::is_spltoken_mint(&stored.data, acc_pubkey);
+            let is_spl_token = ( owner_pubkey == spl_token::ID ) && spl.is_some();
 
             match (is_token2022, is_spl_token) {
                 (true, true) => {
@@ -70,14 +76,14 @@ async fn main() -> anyhow::Result<()> {
                         "both token2022 and spl_token found for account {}", acc_pubkey);
                 }
                 (true, false) => {
-                    writer_token2022
-                        .write_record(&[acc_pubkey.to_string().as_str()])
-                        .unwrap();
+                    all_tokens.insert(acc_pubkey, TokenType::Token2022);
                 }
                 (false, true) => {
-                    writer_spl
-                        .write_record(&[acc_pubkey.to_string().as_str()])
-                        .unwrap();
+                    if spl.unwrap() == 0 {
+                        all_tokens.insert(acc_pubkey, TokenType::SplEmpty);
+                    } else {
+                        all_tokens.insert(acc_pubkey, TokenType::Spl);
+                    }
                 }
                 (false, false) => {
                     debug!("not a mint {}", acc_pubkey);
@@ -86,7 +92,27 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    let mut writer_spl = csv::Writer::from_path("mints_spl_token.csv").unwrap();
+    let mut writer_spl_nosupply = csv::Writer::from_path("mints_spl_token_nosupply.csv").unwrap();
+    let mut writer_token2022 = csv::Writer::from_path("mints_token2022.csv").unwrap();
+
+    for (acc_pubkey, token_type) in all_tokens {
+        match token_type {
+            TokenType::Spl => {
+                writer_spl.write_record(&[acc_pubkey.to_string().as_str()]).unwrap();
+            }
+            TokenType::SplEmpty => {
+                writer_spl_nosupply.write_record(&[acc_pubkey.to_string().as_str()]).unwrap();
+            }
+            TokenType::Token2022 => {
+                writer_token2022.write_record(&[acc_pubkey.to_string().as_str()]).unwrap();
+            }
+        }
+
+    }
+
     writer_spl.flush().unwrap();
+    writer_spl_nosupply.flush().unwrap();
     writer_token2022.flush().unwrap();
 
     Ok(())
