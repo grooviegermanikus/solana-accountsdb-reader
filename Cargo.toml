@@ -9,13 +9,14 @@ publish = false
 
 [dependencies]
 
-solana-frozen-abi-macro = "~2.0.16"
-solana-runtime = "~2.0.16"
-solana-sdk = "~2.0.16"
-solana-accounts-db = "~2.0.16"
-#spl-token = "7.0.0"
-#spl-token-2022 = "7.0.0"
-#spl-token-metadata-interface = "0.6.0"
+solana-frozen-abi-macro = "~2.1.21"
+solana-runtime = "~2.1.21"
+solana-sdk = "~2.1.21"
+solana-accounts-db = "~2.1.21"
+spl-token = "7.0.0"
+spl-token-2022 = "7.0.0"
+spl-token-metadata-interface = "0.6.0"
+spl-type-length-value = "0.7.0"
 
 anyhow = "1.0.75"
 async-trait = "0.1.73"
