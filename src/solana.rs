@@ -19,7 +19,6 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use solana_frozen_abi_macro::AbiExample;
 use solana_accounts_db::account_storage::meta::StoredMetaWriteVersion;
-use solana_accounts_db::accounts_db::BankHashStats;
 use solana_accounts_db::ancestors::AncestorsForSerialization;
 use solana_accounts_db::blockhash_queue::BlockhashQueue;
 use solana_runtime::epoch_stakes::EpochStakes;
@@ -37,6 +36,7 @@ use solana_sdk::slot_history::Slot;
 use solana_sdk::stake::state::Delegation;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
+use solana_accounts_db::accounts_db::stats::BankHashStats;
 
 const MAX_STREAM_SIZE: u64 = 32 * 1024 * 1024 * 1024;
 
