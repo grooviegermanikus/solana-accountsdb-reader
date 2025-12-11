@@ -59,12 +59,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // TODO replace with external sorter (see merge.rs in fst project)
 
-    const BINS: usize = 256;
-    let mut bins = vec![];
-    for _ in 0..BINS {
-        let index_set: IndexSet<[u8; 32]> = IndexSet::with_capacity(1_000_000);
-        bins.push(Arc::new(RwLock::new(index_set)));
-    }
+    let mut index_set: IndexSet<[u8; 32]> = IndexSet::with_capacity(1_000_000);
+
 
     let mut total_accounts: usize = 0;
     info!("Loading all account keys from the snapshot");
@@ -76,42 +72,19 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|ref handle| handle.access().unwrap().meta.pubkey.to_bytes())
             .chunks(1024 * 1024)
         {
-            account_keys_chunk.group_by(|key| key[0] as usize % BINS)
-                .into_iter()
-                .for_each(|(bin_idx, keys)| {
-                    let mut lk = bins[bin_idx].write().unwrap();
-                    lk.extend(keys);
-                    // info!("bin {} len {}", bin_idx, lk.len());
-                });
+            index_set.extend(account_keys_chunk);
 
         }
     }
-    total_accounts = 41;
-    let count_per_bin = bins.iter().map(|bin| bin.read().unwrap().len()).collect::<Vec<_>>();
-    info!("loaded all {} account keys into indexsets in {:.1}ms: {:?}",
+    info!("loaded all {} account keys into indexsets in {:.1}ms",
         total_accounts,
-        started_at.elapsed().as_millis(), count_per_bin);
+        started_at.elapsed().as_millis());
 
-    let mut bin_cnt = Arc::new(AtomicU32::new(0));
-    let mut threads = vec![];
-    for bin in bins {
-        let bin_cnt = bin_cnt.clone();
-        let jh = std::thread::spawn(move || {
-            let bin_file = format!("storage/bin-{}.fst", bin_cnt.fetch_add(1, Ordering::Relaxed));
-            let lk = bin.write().unwrap();
-            let started_at = Instant::now();
-            // lk.sorted_by(|a, b| a.cmp(b));
-            info!("Building FST index file {} ...", bin_file);
-            build_index_fst_file(&bin_file, lk.iter().sorted().into_iter()).unwrap(); // TODO handle panic
-            info!("... built FST index file {} in {}ms", bin_file, started_at.elapsed().as_millis());
-        });
-        threads.push(jh);
-    }
-
-
-    for jh in threads {
-        jh.join().unwrap();
-    }
+    let started_at = Instant::now();
+    // lk.sorted_by(|a, b| a.cmp(b));
+    info!("Building FST index file {} ...", INDEX_FILE);
+    build_index_fst_file(&INDEX_FILE, index_set.iter().sorted().into_iter()).unwrap();
+    info!("... built FST index file {} in {}ms", INDEX_FILE, started_at.elapsed().as_millis());
 
     if scan_fst {
         scan_it()?;
