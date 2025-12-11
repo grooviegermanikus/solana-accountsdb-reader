@@ -16,6 +16,7 @@ pub mod parallel;
 pub mod solana;
 pub mod unpacked;
 pub mod parallel_io;
+mod mint_parser;
 
 const SNAPSHOTS_DIR: &str = "snapshots";
 

@@ -23,7 +23,7 @@ use solana_accounts_db::accounts_db::BankHashStats;
 use solana_accounts_db::ancestors::AncestorsForSerialization;
 use solana_accounts_db::blockhash_queue::BlockhashQueue;
 use solana_runtime::epoch_stakes::EpochStakes;
-use solana_accounts_db::rent_collector::RentCollector;
+use solana_sdk::rent_collector::RentCollector;
 use solana_runtime::stakes::Stakes;
 use solana_sdk::clock::{Epoch, UnixTimestamp};
 use solana_sdk::deserialize_utils::default_on_eof;

@@ -30,3 +30,9 @@ cargo run --bin solana-accountsdb-reader -- --snapshot-archive-path snapshot-780
 [2024-07-12T18:58:10Z INFO  solana_accountsdb_reader] iterated over trie with 0 items in 0ms
 [2024-07-12T18:58:11Z INFO  solana_accountsdb_reader] serialized indexmap to 1813214964 bytes (67.0bytes/item) took 806ms
 ```
+
+# Issues
+Fix "home" dependency issue:
+```
+cargo update -v -p home --precise 0.5.11
+```
