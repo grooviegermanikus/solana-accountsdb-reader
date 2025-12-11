@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 use std::vec::IntoIter;
+use anyhow::bail;
 use clap::Parser;
 use fst::{Automaton, IntoStreamer, Map, MapBuilder, SetBuilder, Streamer};
 use fst::automaton::{StartsWith, Str, Subsequence};
@@ -14,7 +15,7 @@ use futures::future::join_all;
 use indexmap::IndexSet;
 use indexmap::set::Iter;
 use itertools::Itertools;
-use log::info;
+use log::{info, warn};
 use rayon::prelude::*;
 use memmap2::Mmap;
 use solana_sdk::pubkey;
@@ -29,15 +30,21 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
     );
 
-    let Args { snapshot_archive_path, build_fst } = Args::parse();
+    let Args { snapshot_archive_path, build_fst, scan_fst } = Args::parse();
 
+    info!("build {}, scan {}", build_fst, scan_fst);
+    if !build_fst && !scan_fst {
+        return Err("nothing to do, specify --build-fst and/or --scan-fst".into()    );
+    }
 
-    if !build_fst {
+    if !build_fst && scan_fst {
 
         scan_it()?;
 
         return Ok(());
     }
+
+    assert!(build_fst);
 
     let archive_path = PathBuf::from_str(snapshot_archive_path.as_str()).unwrap();
     info!(
@@ -47,8 +54,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let storage = PathBuf::from("storage");
     if !storage.exists() {
-        create_dir("storage").unwrap();
-        info!("created storage/ directory");
+        return Err("missing storage/ directory".into());
     }
 
     // TODO replace with external sorter (see merge.rs in fst project)
@@ -107,7 +113,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         jh.join().unwrap();
     }
 
-    // scan_it()?;
+    if scan_fst {
+        scan_it()?;
+    }
 
     Ok(())
 }
@@ -119,6 +127,8 @@ pub struct Args {
     pub snapshot_archive_path: String,
     #[arg(long)]
     pub build_fst: bool,
+    #[arg(long)]
+    pub scan_fst: bool,
 }
 
 
